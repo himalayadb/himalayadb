@@ -1,3 +1,4 @@
+mod server;
 use clap::{App, load_yaml};
 
 fn main() {

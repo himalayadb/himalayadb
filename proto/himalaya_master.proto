@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package himalaya.master;
+package himalaya;
 import "himalaya_core.proto";
 
 service HimalayaMaster {
@@ -14,11 +14,11 @@ message GetRequest  {
 }
 
 message GetResponse {
-    repeated himalaya.core.WorkerNode workers = 1;
+    repeated WorkerNode workers = 1;
 }
 
 message PutRequest {
-    himalaya.core.Entry entry = 1;
+    Entry entry = 1;
 }
 
 message PutResponse {

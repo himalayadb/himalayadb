@@ -1,34 +1,34 @@
 syntax = "proto3";
 
 
-package himalaya.worker;
+package himalaya;
 
 import "himalaya_core.proto";
 
 service HimalayaWorker {
-  rpc Put (PutRequest) returns (PutResponse) {}
-  rpc Get (GetRequest) returns (GetResponse) {}
-  rpc Delete (DeleteRequest) returns (DeleteResponse) {}
+  rpc Put (WorkerPutRequest) returns (WorkerPutResponse) {}
+  rpc Get (WorkerGetRequest) returns (WorkerGetResponse) {}
+  rpc Delete (WorkerDeleteRequest) returns (WorkerDeleteResponse) {}
 }
 
-message GetRequest { 
+message WorkerGetRequest { 
   bytes key = 1;
 }
 
-message GetResponse { 
+message WorkerGetResponse { 
   bytes value = 1;
 }
 
-message DeleteRequest {
+message WorkerDeleteRequest {
   bytes key = 1;
 }
 
-message DeleteResponse {} 
+message WorkerDeleteResponse {} 
 
-message PutRequest {
-  himalaya.core.Entry entry = 1;
+message WorkerPutRequest {
+  Entry entry = 1;
 }
 
-message PutResponse {}
+message WorkerPutResponse {}
 
 

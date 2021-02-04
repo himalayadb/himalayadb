@@ -12,7 +12,6 @@ path = "src/master/main.rs"
 name = "himalaya-client"
 path = "src/client/main.rs"
 
-
 [[bin]]
 name = "himalaya-worker"
 path = "src/worker/main.rs"

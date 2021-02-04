@@ -1,4 +1,4 @@
-use himalaya::himalaya_client::HimalayaClient;
+use himalaya::himalaya_master_client::HimalayaMasterClient;
 use himalaya::{DeleteRequest, Entry, GetRequest, PutRequest};
 
 mod himalaya {
@@ -7,7 +7,7 @@ mod himalaya {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = HimalayaClient::connect("http://[::1]:50051").await?;
+    let mut client = HimalayaMasterClient::connect("http://[::1]:50051").await?;
 
     {
         let request = tonic::Request::new(PutRequest {

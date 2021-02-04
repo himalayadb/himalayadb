@@ -2,8 +2,8 @@ mod himalaya {
     tonic::include_proto!("himalaya");
 }
 
-use himalaya::himalaya_server::Himalaya;
-pub use himalaya::himalaya_server::HimalayaServer as HimalayaGrpcServer;
+use himalaya::himalaya_master_server::HimalayaMaster;
+pub use himalaya::himalaya_master_server::HimalayaMasterServer as HimalayaGrpcServer;
 use himalaya::{DeleteRequest, DeleteResponse, GetRequest, GetResponse, PutRequest, PutResponse};
 use tonic::{Request, Response, Status};
 use tracing::field::debug;
@@ -30,10 +30,10 @@ impl AsRef<Vec<u8>> for Key {
 }
 
 #[derive(Debug, Default)]
-pub struct HimalayaServer {}
+pub struct HimalayaMasterServer {}
 
 #[tonic::async_trait]
-impl Himalaya for HimalayaServer {
+impl HimalayaMaster for HimalayaMasterServer {
     #[tracing::instrument(
         name = "Put value",
         skip(request),
@@ -61,7 +61,7 @@ impl Himalaya for HimalayaServer {
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
         let get = request.into_inner();
         let _ = Key::parse(get.key).map_err(|e| Status::invalid_argument(e))?;
-        Ok(Response::new(himalaya::GetResponse { entry: None }))
+        Ok(Response::new(himalaya::GetResponse { workers: vec![] }))
     }
 
     #[tracing::instrument(
