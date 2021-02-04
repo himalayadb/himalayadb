@@ -1,33 +1,34 @@
 syntax = "proto3";
 
-package himalaya;
 
-service Himalaya {
+package himalaya.worker;
+
+import "himalaya_core.proto";
+
+service HimalayaWorker {
   rpc Put (PutRequest) returns (PutResponse) {}
   rpc Get (GetRequest) returns (GetResponse) {}
   rpc Delete (DeleteRequest) returns (DeleteResponse) {}
 }
 
-message Entry {
-  bytes key = 1;
-  bytes value = 2;
-}
-
 message GetRequest { 
   bytes key = 1;
 }
+
 message GetResponse { 
-  Entry entry = 1;
+  bytes value = 1;
 }
 
 message DeleteRequest {
   bytes key = 1;
 }
+
 message DeleteResponse {} 
 
 message PutRequest {
-  Entry entry = 1;
+  himalaya.core.Entry entry = 1;
 }
+
 message PutResponse {}
 
 

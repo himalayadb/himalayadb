@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package himalaya.master;
+import "himalaya_core.proto";
+
+service HimalayaMaster {
+    rpc Get(GetRequest) returns (GetResponse) {}
+    rpc Put(PutRequest) returns (PutResponse) {}
+    rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+}
+
+message GetRequest  {
+    bytes key = 1;
+}
+
+message GetResponse {
+    repeated himalaya.core.WorkerNode workers = 1;
+}
+
+message PutRequest {
+    himalaya.core.Entry entry = 1;
+}
+
+message PutResponse {
+    
+}
+
+message DeleteRequest {
+    bytes key = 1;
+}
+
+message DeleteResponse {
+    
+}

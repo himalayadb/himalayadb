@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package himalaya.core;
+
+message Entry {
+    bytes key = 1;
+    bytes value = 2;
+}
+
+message WorkerNode {
+    string host = 1;
+    uint32 port = 2;
+}
