@@ -6,11 +6,17 @@ edition = "2018"
 
 [[bin]]
 name = "himalayadb"
-path = "src/main.rs"
+path = "src/master/main.rs"
 
 [[bin]]
 name = "himalaya-client"
-path = "src/client.rs"
+path = "src/client/main.rs"
+
+
+[[bin]]
+name = "himalaya-worker"
+path = "src/worker/main.rs"
+
 
 [dependencies]
 prost = "0.7.0"
@@ -25,6 +31,7 @@ tracing-futures = "0.2.4"
 tracing-log = "0.1.1"
 tracing-bunyan-formatter = "0.1.7"
 uuid = { version = "0.8.1", features = ["v4"] }
+clap = { version = "3.0.0-beta.2", features = ["yaml"] }
 
 [build-dependencies]
 tonic-build = "0.4.0"

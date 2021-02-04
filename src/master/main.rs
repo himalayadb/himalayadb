@@ -1,4 +1,4 @@
-use crate::server::{HimalayaGrpcServer, HimalayaServer};
+use server::{HimalayaServer, HimalayaGrpcServer};
 use tonic::transport::Server;
 use tracing::subscriber::set_global_default;
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};

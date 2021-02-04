@@ -46,7 +46,7 @@ impl Himalaya for HimalayaServer {
         let entry = put
             .entry
             .ok_or_else(|| Status::invalid_argument("entry was not provided"))?;
-        let key = Key::parse(entry.key).map_err(|e| Status::invalid_argument(e))?;
+        let _ = Key::parse(entry.key).map_err(|e| Status::invalid_argument(e))?;
 
         Ok(Response::new(himalaya::PutResponse {}))
     }
@@ -60,7 +60,7 @@ impl Himalaya for HimalayaServer {
     )]
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
         let get = request.into_inner();
-        let key = Key::parse(get.key).map_err(|e| Status::invalid_argument(e))?;
+        let _ = Key::parse(get.key).map_err(|e| Status::invalid_argument(e))?;
         Ok(Response::new(himalaya::GetResponse { entry: None }))
     }
 
@@ -76,7 +76,7 @@ impl Himalaya for HimalayaServer {
         request: Request<DeleteRequest>,
     ) -> Result<Response<DeleteResponse>, Status> {
         let delete = request.into_inner();
-        let key = Key::parse(delete.key).map_err(|e| Status::invalid_argument(e))?;
+        let _ = Key::parse(delete.key).map_err(|e| Status::invalid_argument(e))?;
         Ok(Response::new(himalaya::DeleteResponse {}))
     }
 }
