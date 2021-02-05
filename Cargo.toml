@@ -1,20 +1,16 @@
 [package]
 name = "himalayadb"
 version = "0.1.0"
-authors = ["Spencer McCreary <spencermccreary@gmail.com>"]
+authors = ["Spencer McCreary <spencermccreary@gmail.com>", "Tim Ross <tr6699@gmail.com>", "Isaac Elbaz <script3r@gmail.com>"]
 edition = "2018"
 
 [[bin]]
 name = "himalayadb"
-path = "src/master/main.rs"
+path = "src/himalaya/main.rs"
 
 [[bin]]
 name = "himalaya-client"
 path = "src/client/main.rs"
-
-[[bin]]
-name = "himalaya-worker"
-path = "src/worker/main.rs"
 
 
 [dependencies]

@@ -1,17 +1,15 @@
-use himalaya::himalaya_master_client::HimalayaMasterClient;
-use himalaya::{DeleteRequest, Entry, GetRequest, PutRequest};
-
 mod himalaya {
     tonic::include_proto!("himalaya");
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = HimalayaMasterClient::connect("http://[::1]:50051").await?;
+    let mut client =
+        himalaya::himalaya_client::HimalayaClient::connect("http://[::1]:50051").await?;
 
     {
-        let request = tonic::Request::new(PutRequest {
-            entry: Some(Entry {
+        let request = tonic::Request::new(himalaya::PutRequest {
+            entry: Some(himalaya::Entry {
                 key: vec![0, 1, 2, 3],
                 value: vec![0, 1, 2, 3],
             }),
@@ -23,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     {
-        let request = tonic::Request::new(GetRequest {
+        let request = tonic::Request::new(himalaya::GetRequest {
             key: vec![0, 1, 2, 3],
         });
 
@@ -33,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     {
-        let request = tonic::Request::new(DeleteRequest {
+        let request = tonic::Request::new(himalaya::DeleteRequest {
             key: vec![0, 1, 2, 3],
         });
 

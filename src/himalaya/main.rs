@@ -1,4 +1,3 @@
-use server::{HimalayaMasterServer, HimalayaGrpcServer};
 use tonic::transport::Server;
 use tracing::subscriber::set_global_default;
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
@@ -24,9 +23,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     set_global_default(subscriber).expect("Failed to set subscriber");
 
     let addr = "[::1]:50051".parse()?;
-    let server = HimalayaMasterServer::default();
 
     tracing::info!(%addr, "Starting server.");
+    let server = server::HimalayaServer::default();
 
     Server::builder()
         .trace_fn(|headers| {
@@ -40,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             request_id = %Uuid::new_v4(),
             )
         })
-        .add_service(HimalayaGrpcServer::new(server))
+        .add_service(server::HimalayaGRPCServer::new(server))
         .serve(addr)
         .await?;
 
