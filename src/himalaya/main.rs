@@ -6,7 +6,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Registry};
 use uuid::Uuid;
 
-mod server;
+use himalaya::server::{HimalayaServer, HimalayaGRPCServer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
 
     tracing::info!(%addr, "Starting server.");
-    let server = server::HimalayaServer::default();
+    let server = HimalayaServer::default();
 
     Server::builder()
         .trace_fn(|headers| {
@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             request_id = %Uuid::new_v4(),
             )
         })
-        .add_service(server::HimalayaGRPCServer::new(server))
+        .add_service(HimalayaGRPCServer::new(server))
         .serve(addr)
         .await?;
 
