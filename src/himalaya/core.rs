@@ -1,10 +1,10 @@
 #[derive(Debug)]
 struct Node {
-    pub metadata: NodeMetadata
+    pub metadata: NodeMetadata,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct NodeMetadata {
     pub identifier: String,
-    pub token: i64
+    pub token: i64,
 }
