@@ -1,4 +1,2 @@
-pub mod core;
-pub mod bootstrap;
-pub mod metadata;
+pub mod node;
 pub mod server;
