@@ -6,8 +6,9 @@ use std::collections::HashMap;
 use std::future::Future;
 use tokio_stream::StreamExt;
 
+pub mod bootstrap;
 pub mod metadata;
-mod topology;
+pub mod topology;
 
 pub struct Node<W: NodeWatcher> {
     pub metadata: NodeMetadata,
@@ -80,7 +81,6 @@ mod test {
         EtcdMetadataProvider, EtcdMetadataProviderConfig, NodeRegisterRequest,
     };
     use tokio::sync::oneshot;
-    use tokio::time::Duration;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_node() {
@@ -92,15 +92,9 @@ mod test {
             .expect("failed to create etcd provider"),
         );
 
-        let mut node = Node::create(
-            NodeMetadata {
-                identifier: "test".to_owned(),
-                token: -1,
-            },
-            provider,
-        )
-        .await
-        .expect("failed to create node");
+        let node = Node::create("test", provider)
+            .await
+            .expect("failed to create node");
 
         let (tx, rx) = oneshot::channel();
         tokio::spawn(async move {
@@ -140,43 +134,5 @@ mod test {
                 expected
             )
         }
-
-        let mut t = node.topology.clone();
-        tokio::spawn(async move {
-            for n in 1..5 {
-                let identifier = format!("members/node_{:?}", n);
-
-                let expected = t
-                    .get_node(&identifier)
-                    .expect(&format!("{:?} not found", identifier));
-                assert_eq!(
-                    NodeMetadata {
-                        identifier,
-                        token: -1
-                    },
-                    expected
-                )
-            }
-
-            tokio::time::sleep(Duration::from_micros(1)).await;
-
-            t.add_node(NodeMetadata {
-                identifier: "spencer".to_string(),
-                token: 0,
-            })
-        })
-        .await;
-
-        let metadata = node
-            .topology
-            .get_node("spencer")
-            .expect("spencer doesnt exist");
-        assert_eq!(
-            NodeMetadata {
-                identifier: "spencer".to_string(),
-                token: 0
-            },
-            metadata
-        );
     }
 }
