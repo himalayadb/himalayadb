@@ -9,10 +9,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     {
         let request = tonic::Request::new(himalaya::PutRequest {
-            entry: Some(himalaya::Entry {
-                key: vec![0, 1, 2, 3],
-                value: vec![0, 1, 2, 3],
-            }),
+            key: vec![0, 1, 2, 3],
+            value: vec![0, 1, 2, 3],
         });
 
         let response = client.put(request).await?;

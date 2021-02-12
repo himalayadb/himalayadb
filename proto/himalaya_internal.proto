@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package himalaya.internal;
 
-import "himalaya_core.proto";
-
 service HimalayaInternal {
   rpc Put (PutRequest) returns (PutResponse) {}
   rpc Get (GetRequest) returns (GetResponse) {}
@@ -25,7 +23,8 @@ message DeleteRequest {
 message DeleteResponse {}
 
 message PutRequest {
-  Entry entry = 1;
+  bytes key = 1;
+  bytes value = 2;
 }
 
 message PutResponse {}

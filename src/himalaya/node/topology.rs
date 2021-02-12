@@ -1,21 +1,38 @@
 use crate::node::metadata::{MetadataProvider, NodeWatchEvent, NodeWatcher};
+use crate::node::partitioner::{Murmur3, Partitioner};
 use crate::node::Node;
 use tokio_stream::StreamExt;
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
-pub struct Topology<Provider> {
-    pub(crate) nodes: Arc<RwLock<HashMap<String, Node>>>,
-    pub(crate) provider: Provider,
+pub struct Topology<MetaProvider> {
+    nodes: Arc<RwLock<HashMap<String, Rc<Node>>>>,
+    provider: MetaProvider,
+    partitioner: Partitioner,
 }
 
 impl<Provider: MetadataProvider> Topology<Provider> {
-    pub fn new(n: HashMap<String, Node>, p: Provider) -> Self {
+    pub fn find_coordinator(&self, key: &[u8]) -> Option<Rc<Node>> {
+        let tk = self.partitioner.partition(key);
+        let map = self.nodes.read().ok()?;
+
+        map.iter().take(1).next().map(|(k, v)| Rc::clone(v))
+    }
+}
+
+impl<Provider: MetadataProvider> Topology<Provider> {
+    pub fn new(
+        nodes: HashMap<String, Rc<Node>>,
+        provider: Provider,
+        partitioner: Partitioner,
+    ) -> Self {
         Topology {
-            nodes: Arc::new(RwLock::new(n)),
-            provider: p,
+            nodes: Arc::new(RwLock::new(nodes)),
+            provider,
+            partitioner,
         }
     }
 
@@ -51,21 +68,21 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         }
     }
 
-    pub fn get_node(&self, identifier: &str) -> Option<Node> {
+    pub fn get_node(&self, identifier: &str) -> Option<Rc<Node>> {
         let map = self.nodes.try_read().ok()?;
         if let Some(nm) = map.get(identifier) {
-            Some((*nm).clone())
+            Some(Rc::clone(nm))
         } else {
             None
         }
     }
 
-    pub fn add_node(&self, node: Node) -> Option<Node> {
+    pub fn add_node(&self, node: Node) -> Option<Rc<Node>> {
         let mut map = self.nodes.try_write().ok()?;
-        map.insert(node.metadata.identifier.clone(), node)
+        map.insert(node.metadata.identifier.clone(), Rc::new(node))
     }
 
-    pub fn remove_node(&self, identifier: &str) -> Option<Node> {
+    pub fn remove_node(&self, identifier: &str) -> Option<Rc<Node>> {
         let mut map = self.nodes.try_write().ok()?;
         map.remove(identifier)
     }
@@ -73,9 +90,62 @@ impl<Provider: MetadataProvider> Topology<Provider> {
 
 #[cfg(test)]
 mod test {
+    use std::borrow::Borrow;
+
     use super::*;
     use crate::node::metadata::{EtcdMetadataProvider, EtcdMetadataProviderConfig, NodeMetadata};
     use tokio::sync::oneshot;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_can_find_coordinator() {
+        let provider = EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
+            hosts: vec!["localhost:2379".to_owned()],
+        })
+        .await
+        .expect("failed to create etcd provider");
+
+        let partitioner = Partitioner::Murmur3(Murmur3 {});
+        let existing_nodes = provider
+            .node_list_all()
+            .await
+            .expect("failed to list all nodes");
+
+        let topology = Topology::new(
+            existing_nodes
+                .into_iter()
+                .map(|x| (x.identifier.clone(), Rc::new(Node::new(x))))
+                .collect(),
+            provider,
+            partitioner,
+        );
+        let (tx, rx) = oneshot::channel();
+
+        tokio::spawn(async move {
+            let provider = Box::new(
+                EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
+                    hosts: vec!["localhost:2379".to_owned()],
+                })
+                .await
+                .expect("failed to create etcd provider"),
+            );
+
+            let _registration = provider
+                .node_register(&NodeMetadata {
+                    token: 1,
+                    identifier: format!("node_{:?}", 1),
+                })
+                .await
+                .expect("failed to obtain registration");
+            tx.send(()).expect("failed to send shutdown");
+        });
+
+        topology.start(rx).await.expect("node failed");
+
+        let (k, _) = ("hello", "world");
+        let _ = topology
+            .find_coordinator(k.as_bytes())
+            .expect("could not find coordinator");
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_can_populate_topology() {
@@ -85,7 +155,9 @@ mod test {
         .await
         .expect("failed to create etcd provider");
 
-        let topology = Topology::new(HashMap::new(), provider);
+        let partitioner = Partitioner::Murmur3(Murmur3 {});
+
+        let topology = Topology::new(HashMap::new(), provider, partitioner);
 
         let (tx, rx) = oneshot::channel();
         tokio::spawn(async move {
@@ -97,7 +169,7 @@ mod test {
                 .expect("failed to create etcd provider"),
             );
 
-            for n in 1..5 {
+            for n in 1..10 {
                 let _registration = provider
                     .node_register(&NodeMetadata {
                         token: n,
@@ -111,18 +183,15 @@ mod test {
 
         topology.start(rx).await.expect("node failed");
 
-        for token in 1..5 {
-            let identifier = format!("members/node_{:?}", token);
+        for token in 1..10 {
+            let identifier = format!("node_{:?}", token);
 
             let expected = topology
                 .get_node(&identifier)
                 .expect(&format!("{:?} not found", identifier));
             assert_eq!(
-                Node::new(NodeMetadata {
-                    identifier,
-                    token: -1,
-                }),
-                expected
+                &Node::new(NodeMetadata { identifier, token }),
+                expected.borrow()
             )
         }
     }

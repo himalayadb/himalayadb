@@ -2,7 +2,7 @@ use crate::node::metadata::{NodeMetadata};
 
 pub mod metadata;
 pub mod topology;
-pub mod token;
+pub mod partitioner;
 
 
 #[derive(Debug, Clone, PartialEq)]

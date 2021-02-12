@@ -1,7 +1,10 @@
 use crate::node::metadata::{
-    MetadataProvider, NodeMetadata, NodeWatchEvent,
-    NodeWatcher, Subscription,
+    MetadataProvider, NodeMetadata, NodeWatchEvent, NodeWatcher, Subscription,
 };
+use prost::Message;
+
+use crate::server::himalaya_internal::NodeMetadata as ProtoNodeMetadata;
+
 use async_trait::async_trait;
 use etcd_client::{Client, EventType, GetOptions, WatchOptions, WatchStream, Watcher};
 use std::pin::Pin;
@@ -31,14 +34,20 @@ impl EtcdMetadataProvider {
 impl MetadataProvider for EtcdMetadataProvider {
     type MetaWatcher = EtcdWatcher;
 
-    async fn node_register(
-        &self,
-        r: &NodeMetadata,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    async fn node_register(&self, r: &NodeMetadata) -> Result<(), Box<dyn std::error::Error>> {
+        let mut buf = Vec::new();
+
+        let nm = ProtoNodeMetadata {
+            identifier: r.identifier.clone(),
+            token: r.token,
+        };
+
+        nm.encode(&mut buf)?;
+
         let _worker = self
             .client
             .clone()
-            .put(format!("members/{}", r.identifier), vec![], None)
+            .put(format!("members/{}", r.identifier), buf, None)
             .await?;
 
         Ok(())
@@ -64,10 +73,8 @@ impl MetadataProvider for EtcdMetadataProvider {
             .kvs()
             .iter()
             .map(|x| {
-                Ok(NodeMetadata {
-                    identifier: x.key_str()?.to_owned(),
-                    token: -1,
-                })
+                let nm = ProtoNodeMetadata::decode(x.value())?;
+                Ok(nm.into())
             })
             .collect()
     }
@@ -101,28 +108,14 @@ impl Stream for EtcdWatcher {
                     let mut results = Vec::with_capacity(response.events().len());
                     for event in response.events() {
                         if let Some(kv) = event.kv() {
-                            if let Ok(key) = kv.key_str() {
-                                let identifier = key.to_owned();
+                            if let Ok(pnm) = ProtoNodeMetadata::decode(kv.value()) {
                                 match event.event_type() {
-                                    EventType::Delete => {
-                                        results.push(NodeWatchEvent::LeftCluster(NodeMetadata {
-                                            identifier,
-                                            token: -1,
-                                        }))
-                                    }
-                                    EventType::Put => {
-                                        results.push(NodeWatchEvent::JoinedCluster(NodeMetadata {
-                                            identifier,
-                                            token: -1,
-                                        }))
-                                    }
+                                    EventType::Delete => results.push(NodeWatchEvent::LeftCluster(pnm.into())),
+                                    EventType::Put => results.push(NodeWatchEvent::JoinedCluster(pnm.into())),
                                 }
-                            } else {
-                                return Some(Err(From::from("invalid identifier found")));
-                            }
+                            } 
                         }
                     }
-
                     Some(Ok(results))
                 }
                 Some(Err(e)) => Some(Err(From::from(e))),

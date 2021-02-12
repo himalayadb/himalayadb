@@ -6,12 +6,22 @@ use tokio_stream::Stream;
 pub mod etcd;
 pub use etcd::*;
 
+use crate::server::himalaya_internal::NodeMetadata as ProtoNodeMetadata;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeMetadata {
     pub identifier: String,
     pub token: i64,
 }
 
+impl From<ProtoNodeMetadata> for NodeMetadata {
+    fn from(nm: ProtoNodeMetadata) -> Self {
+        NodeMetadata{
+            identifier: nm.identifier,
+            token: nm.token,
+        }
+    }
+}
 #[async_trait]
 pub trait MetadataProvider {
     type MetaWatcher: NodeWatcher;
@@ -24,7 +34,7 @@ pub trait MetadataProvider {
     async fn subscribe(
         &self,
     ) -> Result<Subscription<Self::MetaWatcher>, Box<dyn std::error::Error>>;
-    
+
     async fn node_list_all(&self) -> Result<Vec<NodeMetadata>, Box<dyn std::error::Error>>;
 }
 

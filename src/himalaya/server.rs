@@ -1,6 +1,11 @@
 mod himalaya {
     tonic::include_proto!("himalaya");
 }
+
+pub mod himalaya_internal {
+    tonic::include_proto!("himalaya.internal");
+}
+
 pub use himalaya::himalaya_server::HimalayaServer as HimalayaGRPCServer;
 
 use tonic::{Request, Response, Status};
@@ -46,10 +51,8 @@ impl himalaya::himalaya_server::Himalaya for HimalayaServer {
         let get = request.into_inner();
         let _ = Key::parse(get.key).map_err(|e| Status::invalid_argument(e))?;
         Ok(Response::new(himalaya::GetResponse {
-            entry: Some(himalaya::Entry {
-                key: vec![0, 1, 2, 3],
-                value: vec![0, 1, 2, 3],
-            }),
+            key: vec![0, 1, 2, 3],
+            value: vec![0, 1, 2, 3],
         }))
     }
 
@@ -65,10 +68,7 @@ impl himalaya::himalaya_server::Himalaya for HimalayaServer {
         request: Request<himalaya::PutRequest>,
     ) -> Result<Response<himalaya::PutResponse>, Status> {
         let put = request.into_inner();
-        let entry = put
-            .entry
-            .ok_or_else(|| Status::invalid_argument("entry was not provided"))?;
-        let _ = Key::parse(entry.key).map_err(|e| Status::invalid_argument(e))?;
+        let _ = Key::parse(put.key).map_err(|e| Status::invalid_argument(e))?;
 
         Ok(Response::new(himalaya::PutResponse {}))
     }

@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package himalaya;
-
-message Entry {
-    bytes key = 1;
-    bytes value = 2;
-}
-
