@@ -1,5 +1,5 @@
 use crate::node::metadata::{
-    MetadataProvider, NodeMetadata, NodeRegisterRequest, NodeRegisterResponse, NodeWatchEvent,
+    MetadataProvider, NodeMetadata, NodeWatchEvent,
     NodeWatcher, Subscription,
 };
 use async_trait::async_trait;
@@ -33,20 +33,15 @@ impl MetadataProvider for EtcdMetadataProvider {
 
     async fn node_register(
         &self,
-        r: &NodeRegisterRequest,
-    ) -> Result<NodeRegisterResponse, Box<dyn std::error::Error>> {
+        r: &NodeMetadata,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let _worker = self
             .client
             .clone()
             .put(format!("members/{}", r.identifier), vec![], None)
             .await?;
 
-        Ok(NodeRegisterResponse {
-            node_metadata: NodeMetadata {
-                identifier: r.identifier.clone(),
-                token: -1,
-            },
-        })
+        Ok(())
     }
 
     async fn subscribe(&self) -> Result<Subscription<EtcdWatcher>, Box<dyn std::error::Error>> {
@@ -133,73 +128,5 @@ impl Stream for EtcdWatcher {
                 Some(Err(e)) => Some(Err(From::from(e))),
                 None => None,
             })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use tokio_stream::StreamExt;
-
-    #[tokio::test]
-    async fn test_can_register_with_etcd() {
-        let provider = EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
-            hosts: vec!["localhost:2379".to_owned()],
-        })
-        .await
-        .expect("failed to create provider");
-
-        let _registration = provider
-            .node_register(&NodeRegisterRequest {
-                identifier: "node_1".to_owned(),
-            })
-            .await
-            .expect("failed to obtain registration");
-
-        let nodes = provider
-            .node_list_all()
-            .await
-            .expect("failed to list all nodes");
-
-        assert_eq!(1, nodes.len());
-        assert_eq!("members/node_1", nodes[0].identifier);
-    }
-
-    #[tokio::test]
-    async fn test_can_watch_nodes() {
-        let provider = EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
-            hosts: vec!["localhost:2379".to_owned()],
-        })
-        .await
-        .expect("failed to create provider");
-
-        let subscriber = provider
-            .subscribe()
-            .await
-            .expect("failed to obtain watcher");
-
-        tokio::spawn(async move {
-            let _registration = provider
-                .node_register(&NodeRegisterRequest {
-                    identifier: "node_3".to_owned(),
-                })
-                .await
-                .expect("failed to obtain registration");
-        });
-
-        let messages = subscriber
-            .take(1)
-            .next()
-            .await
-            .expect("failed to get events")
-            .expect("failed to get events");
-        assert_eq!(1, messages.len());
-        assert_eq!(
-            NodeWatchEvent::JoinedCluster(NodeMetadata {
-                identifier: "members/node_3".to_string(),
-                token: -1
-            }),
-            messages[0]
-        )
     }
 }

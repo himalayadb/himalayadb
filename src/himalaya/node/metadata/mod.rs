@@ -4,7 +4,6 @@ use std::task::{Context, Poll};
 use tokio_stream::Stream;
 
 pub mod etcd;
-
 pub use etcd::*;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -19,11 +18,13 @@ pub trait MetadataProvider {
 
     async fn node_register(
         &self,
-        r: &NodeRegisterRequest,
-    ) -> Result<NodeRegisterResponse, Box<dyn std::error::Error>>;
+        r: &NodeMetadata,
+    ) -> Result<(), Box<dyn std::error::Error>>;
+
     async fn subscribe(
         &self,
     ) -> Result<Subscription<Self::MetaWatcher>, Box<dyn std::error::Error>>;
+    
     async fn node_list_all(&self) -> Result<Vec<NodeMetadata>, Box<dyn std::error::Error>>;
 }
 
@@ -31,11 +32,6 @@ pub trait MetadataProvider {
 pub enum NodeWatchEvent {
     LeftCluster(NodeMetadata),
     JoinedCluster(NodeMetadata),
-}
-
-#[derive(Debug)]
-pub struct NodeRegisterRequest {
-    pub(crate) identifier: String,
 }
 
 #[derive(Debug)]
