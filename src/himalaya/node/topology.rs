@@ -1,22 +1,21 @@
+use crate::node::metadata::{MetadataProvider, NodeWatchEvent, NodeWatcher};
 use crate::node::Node;
-use crate::node::metadata::{MetadataProvider, NodeWatcher, NodeWatchEvent};
 use tokio_stream::StreamExt;
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use std::future::Future;
+use std::sync::{Arc, RwLock};
 
-pub struct Topology<W: NodeWatcher> {
+pub struct Topology<Provider> {
     pub(crate) nodes: Arc<RwLock<HashMap<String, Node>>>,
-    pub(crate) provider: Box<dyn MetadataProvider<MetaWatcher = W>>,
+    pub(crate) provider: Provider,
 }
 
-impl <W: NodeWatcher> Topology<W> {
-    pub fn new(n: HashMap<String, Node>, p: Box<dyn MetadataProvider<MetaWatcher = W>>) -> Self {
+impl<Provider: MetadataProvider> Topology<Provider> {
+    pub fn new(n: HashMap<String, Node>, p: Provider) -> Self {
         Topology {
             nodes: Arc::new(RwLock::new(n)),
             provider: p,
-        
         }
     }
 
@@ -51,7 +50,7 @@ impl <W: NodeWatcher> Topology<W> {
             sub.unsubscribe().await?;
         }
     }
-    
+
     pub fn get_node(&self, identifier: &str) -> Option<Node> {
         let map = self.nodes.try_read().ok()?;
         if let Some(nm) = map.get(identifier) {
@@ -72,7 +71,6 @@ impl <W: NodeWatcher> Topology<W> {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -81,15 +79,12 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_can_populate_topology() {
-        let provider = Box::new(
-            EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
-                hosts: vec!["localhost:2379".to_owned()],
-            })
-            .await
-            .expect("failed to create etcd provider"),
-        );
+        let provider = EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
+            hosts: vec!["localhost:2379".to_owned()],
+        })
+        .await
+        .expect("failed to create etcd provider");
 
-        
         let topology = Topology::new(HashMap::new(), provider);
 
         let (tx, rx) = oneshot::channel();
@@ -123,7 +118,7 @@ mod test {
                 .get_node(&identifier)
                 .expect(&format!("{:?} not found", identifier));
             assert_eq!(
-                Node::new(NodeMetadata{
+                Node::new(NodeMetadata {
                     identifier,
                     token: -1,
                 }),
