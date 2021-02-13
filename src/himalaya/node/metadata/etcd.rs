@@ -6,10 +6,13 @@ use prost::Message;
 use crate::server::himalaya_internal::NodeMetadata as ProtoNodeMetadata;
 
 use async_trait::async_trait;
-use etcd_client::{Client, EventType, GetOptions, WatchOptions, WatchStream, Watcher};
+use etcd_client::{Client, EventType, GetOptions, PutOptions, WatchOptions, WatchStream, Watcher};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::time::{self, Duration, Instant};
+use tokio_stream::wrappers::IntervalStream;
 use tokio_stream::Stream;
+use tokio_stream::StreamExt;
 
 #[derive(Clone)]
 pub struct EtcdMetadataProvider {
@@ -21,6 +24,8 @@ pub struct EtcdMetadataProviderConfig {
 }
 
 impl EtcdMetadataProvider {
+    const LEASE_TTL: u64 = 20000;
+
     pub async fn new(
         config: EtcdMetadataProviderConfig,
     ) -> Result<EtcdMetadataProvider, Box<dyn std::error::Error>> {
@@ -35,21 +40,41 @@ impl MetadataProvider for EtcdMetadataProvider {
     type MetaWatcher = EtcdWatcher;
 
     async fn node_register(&self, r: &NodeMetadata) -> Result<(), Box<dyn std::error::Error>> {
-        let mut buf = Vec::new();
+        let mut client = self.client.clone();
+        let lease_grant = client
+            .lease_grant(EtcdMetadataProvider::LEASE_TTL as i64, None)
+            .await?;
 
         let nm = ProtoNodeMetadata {
             identifier: r.identifier.clone(),
             token: r.token,
         };
-
+        let mut buf = Vec::new();
         nm.encode(&mut buf)?;
 
-        let _worker = self
-            .client
+        let lease_id = lease_grant.id();
+        let _worker = client
             .clone()
-            .put(format!("members/{}", r.identifier), buf, None)
+            .put(
+                format!("members/{}", r.identifier),
+                buf,
+                Some(PutOptions::new().with_lease(lease_id)),
+            )
             .await?;
 
+        let keep_alive_task = async move {
+            let mut interval = IntervalStream::new(time::interval(Duration::from_millis(2000)));
+            while let Some(i) = interval.next().await {
+                println!("{:?}", Instant::now() - i,);
+
+                if client.lease_keep_alive(lease_id).await.is_err() {
+                    println!("failed to send keep alive");
+                    return;
+                }
+            }
+        };
+
+        tokio::spawn(keep_alive_task);
         Ok(())
     }
 
@@ -110,10 +135,14 @@ impl Stream for EtcdWatcher {
                         if let Some(kv) = event.kv() {
                             if let Ok(pnm) = ProtoNodeMetadata::decode(kv.value()) {
                                 match event.event_type() {
-                                    EventType::Delete => results.push(NodeWatchEvent::LeftCluster(pnm.into())),
-                                    EventType::Put => results.push(NodeWatchEvent::JoinedCluster(pnm.into())),
+                                    EventType::Delete => {
+                                        results.push(NodeWatchEvent::LeftCluster(pnm.into()))
+                                    }
+                                    EventType::Put => {
+                                        results.push(NodeWatchEvent::JoinedCluster(pnm.into()))
+                                    }
                                 }
-                            } 
+                            }
                         }
                     }
                     Some(Ok(results))
