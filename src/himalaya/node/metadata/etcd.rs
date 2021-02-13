@@ -24,7 +24,7 @@ pub struct EtcdMetadataProviderConfig {
 }
 
 impl EtcdMetadataProvider {
-    const LEASE_TTL: u64 = 20000;
+    const LEASE_TTL: u64 = 10;
 
     pub async fn new(
         config: EtcdMetadataProviderConfig,
@@ -63,10 +63,11 @@ impl MetadataProvider for EtcdMetadataProvider {
             .await?;
 
         let keep_alive_task = async move {
-            let mut interval = IntervalStream::new(time::interval(Duration::from_millis(2000)));
-            while let Some(i) = interval.next().await {
-                println!("{:?}", Instant::now() - i,);
+            let mut interval = IntervalStream::new(time::interval(Duration::from_secs(
+                EtcdMetadataProvider::LEASE_TTL - 5,
+            )));
 
+            while let Some(i) = interval.next().await {
                 if client.lease_keep_alive(lease_id).await.is_err() {
                     println!("failed to send keep alive");
                     return;
