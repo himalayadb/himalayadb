@@ -7,11 +7,24 @@ pub mod etcd;
 pub use etcd::*;
 
 use crate::proto::himalaya_internal::NodeMetadata as ProtoNodeMetadata;
+use std::cmp::Ordering;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeMetadata {
     pub identifier: String,
     pub token: i64,
+}
+
+impl PartialOrd for NodeMetadata {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+
+impl Ord for NodeMetadata {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.token.cmp(&other.token)
+    }
 }
 
 impl From<ProtoNodeMetadata> for NodeMetadata {

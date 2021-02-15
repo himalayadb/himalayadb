@@ -10,6 +10,7 @@ use std::sync::{Arc, RwLock};
 
 pub struct Topology<MetaProvider> {
     nodes: Arc<RwLock<HashMap<String, Rc<Node>>>>,
+    nodes_list: Arc<RwLock<Vec<Rc<Node>>>>,
     provider: MetaProvider,
     partitioner: Partitioner,
 }
@@ -20,8 +21,15 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         provider: Provider,
         partitioner: Partitioner,
     ) -> Self {
+        let mut n = nodes
+            .iter()
+            .map(|(_, v)| Rc::clone(v))
+            .collect::<Vec<Rc<Node>>>();
+        n.sort();
+
         Topology {
             nodes: Arc::new(RwLock::new(nodes)),
+            nodes_list: Arc::new(RwLock::new(n)),
             provider,
             partitioner,
         }
@@ -38,11 +46,42 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         }
     }
 
-    pub fn find_coordinator(&self, key: &[u8]) -> Option<Rc<Node>> {
+    pub fn find_coordinator_and_replicas(&self, key: &[u8]) -> Option<(Rc<Node>, Vec<Rc<Node>>)> {
         let tk = self.partitioner.partition(key);
-        let map = self.nodes.read().ok()?;
+        let list = self.nodes_list.try_read().ok()?;
+        let len = list.len();
+        let mut found = len;
+        for (i, x) in list.iter().enumerate() {
+            if tk < x.metadata.token {
+                continue;
+            }
+            found = i;
+            break;
+        }
 
-        map.iter().take(1).next().map(|(_, v)| Rc::clone(v))
+        let replicas = 2;
+        let len = list.len();
+        let mut replica_nodes = Vec::new();
+
+        let mut start = found;
+        let mut coordinator = found;
+
+        // did not find coordinator
+        if coordinator == len {
+            coordinator = len - 1;
+            start = 0;
+        }
+
+        for n in start..(start + replicas) {
+            // replicas
+            if n > len {
+                replica_nodes.push(list[n % len].clone());
+            } else {
+                replica_nodes.push(list[n].clone());
+            }
+        }
+
+        Some((list[coordinator].clone(), replica_nodes))
     }
 
     async fn watch(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -72,11 +111,24 @@ impl<Provider: MetadataProvider> Topology<Provider> {
     }
 
     fn add_node(&self, node: Node) -> Option<Rc<Node>> {
+        let mut list = self.nodes_list.try_write().ok()?;
+        let nrc = Rc::new(node);
+        list.push(nrc.clone());
+        list.sort();
+
         let mut map = self.nodes.try_write().ok()?;
-        map.insert(node.metadata.identifier.clone(), Rc::new(node))
+        map.insert(nrc.metadata.identifier.clone(), nrc)
     }
 
     fn remove_node(&self, identifier: &str) -> Option<Rc<Node>> {
+        let mut list = self.nodes_list.try_write().ok()?;
+        if let Some(pos) = list
+            .iter()
+            .position(|x| x.metadata.identifier == identifier)
+        {
+            list.remove(pos);
+        }
+
         let mut map = self.nodes.try_write().ok()?;
         map.remove(identifier)
     }

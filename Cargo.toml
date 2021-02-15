@@ -34,6 +34,7 @@ clap = { version = "3.0.0-beta.2", features = ["yaml"] }
 etcd-client = "0.6"
 tokio-test = "0.4.0"
 async-trait = "0.1.42"
+murmur3 = "0.5.1"
 
 [build-dependencies]
 tonic-build = "0.4.0"
