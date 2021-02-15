@@ -32,4 +32,5 @@ message PutResponse {}
 message NodeMetadata {
   string identifier = 1;
   int64 token = 2;
+  string host = 3;
 }

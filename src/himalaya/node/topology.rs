@@ -1,30 +1,29 @@
 use crate::node::metadata::{MetadataProvider, NodeWatchEvent};
-use crate::node::partitioner::{Murmur3, Partitioner};
+use crate::node::partitioner::Partitioner;
 use crate::node::Node;
 use tokio_stream::StreamExt;
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
 pub struct Topology<MetaProvider> {
-    nodes: Arc<RwLock<HashMap<String, Rc<Node>>>>,
-    nodes_list: Arc<RwLock<Vec<Rc<Node>>>>,
+    nodes: Arc<RwLock<HashMap<String, Arc<Node>>>>,
+    nodes_list: Arc<RwLock<Vec<Arc<Node>>>>,
     provider: MetaProvider,
     partitioner: Partitioner,
 }
 
 impl<Provider: MetadataProvider> Topology<Provider> {
     pub fn new(
-        nodes: HashMap<String, Rc<Node>>,
+        nodes: HashMap<String, Arc<Node>>,
         provider: Provider,
         partitioner: Partitioner,
     ) -> Self {
         let mut n = nodes
             .iter()
-            .map(|(_, v)| Rc::clone(v))
-            .collect::<Vec<Rc<Node>>>();
+            .map(|(_, v)| Arc::clone(v))
+            .collect::<Vec<Arc<Node>>>();
         n.sort();
 
         Topology {
@@ -50,7 +49,7 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         &self,
         key: &[u8],
         num_replicas: usize,
-    ) -> Option<(Rc<Node>, Vec<Rc<Node>>)> {
+    ) -> Option<(Arc<Node>, Vec<Arc<Node>>)> {
         let tk = self.partitioner.partition(key);
         let list = self.nodes_list.try_read().ok()?;
         if num_replicas > list.len() {
@@ -59,7 +58,7 @@ impl<Provider: MetadataProvider> Topology<Provider> {
             Some(Topology::<Provider>::get_coordinator_and_replicas(
                 num_replicas as usize,
                 tk,
-                list.as_slice(),
+                &list,
             ))
         }
     }
@@ -67,8 +66,8 @@ impl<Provider: MetadataProvider> Topology<Provider> {
     fn get_coordinator_and_replicas(
         num_replicas: usize,
         token: i64,
-        nodes: &[Rc<Node>],
-    ) -> (Rc<Node>, Vec<Rc<Node>>) {
+        nodes: &[Arc<Node>],
+    ) -> (Arc<Node>, Vec<Arc<Node>>) {
         let num_nodes = nodes.len();
         assert!(num_replicas < num_nodes);
 
@@ -121,14 +120,14 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         }
     }
 
-    pub fn get_node(&self, identifier: &str) -> Option<Rc<Node>> {
+    pub fn get_node(&self, identifier: &str) -> Option<Arc<Node>> {
         let map = self.nodes.try_read().ok()?;
-        map.get(identifier).map(|n| Rc::clone(n))
+        map.get(identifier).map(|n| n.clone())
     }
 
-    fn add_node(&self, node: Node) -> Option<Rc<Node>> {
+    fn add_node(&self, node: Node) -> Option<Arc<Node>> {
         let mut list = self.nodes_list.try_write().ok()?;
-        let nrc = Rc::new(node);
+        let nrc = Arc::new(node);
         list.push(nrc.clone());
         list.sort();
 
@@ -136,7 +135,7 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         map.insert(nrc.metadata.identifier.clone(), nrc)
     }
 
-    fn remove_node(&self, identifier: &str) -> Option<Rc<Node>> {
+    fn remove_node(&self, identifier: &str) -> Option<Arc<Node>> {
         let mut list = self.nodes_list.try_write().ok()?;
         if let Some(pos) = list
             .iter()
@@ -169,18 +168,17 @@ mod test {
 
         let mut nodes = Vec::new();
         for i in vec![0, 5, 10, 15, 23] {
-            nodes.push(Rc::new(Node::new(NodeMetadata {
+            nodes.push(Arc::new(Node::new(NodeMetadata {
                 identifier: "test".to_string(),
                 token: i,
+                host: "127.0.0.1:50051".to_owned(),
             })));
         }
 
         for (token, replicas, expected_coordinator, expected_replica_ids) in tests {
             let (coordinator, replicas) =
                 Topology::<EtcdMetadataProvider>::get_coordinator_and_replicas(
-                    replicas,
-                    token,
-                    nodes.as_slice(),
+                    replicas, token, &nodes,
                 );
             assert_eq!(
                 Node::new(NodeMetadata {

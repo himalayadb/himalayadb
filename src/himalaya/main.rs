@@ -1,5 +1,13 @@
+use himalaya::node::metadata::{
+    EtcdMetadataProvider, EtcdMetadataProviderConfig, MetadataProvider, NodeMetadata,
+};
+use himalaya::node::partitioner::{Murmur3, Partitioner};
+use himalaya::node::topology::Topology;
+use himalaya::node::Node;
 use himalaya::proto::himalaya::himalaya_server::HimalayaServer as HimalayaGRPCServer;
-use himalaya::server::HimalayaServer;
+use himalaya::proto::himalaya_internal::himalaya_internal_server::HimalayaInternalServer;
+use himalaya::server::{HimalayaServer, InternalHimalayaServer};
+use std::sync::Arc;
 use tonic::transport::Server;
 use tracing::subscriber::set_global_default;
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
@@ -25,7 +33,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
 
     tracing::info!(%addr, "Starting server.");
-    let server = HimalayaServer::default();
+
+    let provider = EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
+        hosts: vec!["localhost:2379".to_owned()],
+    })
+    .await?;
+
+    let node = Node::new(NodeMetadata {
+        identifier: "test".to_owned(),
+        token: 1,
+        host: "127.0.0.1:50051".to_owned(),
+    });
+
+    provider.node_register(&node.metadata).await?;
+
+    let nodes = provider.node_list_all().await?;
+
+    let topology = Topology::new(
+        nodes
+            .into_iter()
+            .map(|x| (x.identifier.clone(), Arc::new(Node::new(x))))
+            .collect(),
+        provider,
+        Partitioner::Murmur3(Murmur3 {}),
+    );
+
+    let external_server = HimalayaServer::new(node, topology);
+    let internal_server = InternalHimalayaServer::new();
 
     Server::builder()
         .trace_fn(|headers| {
@@ -39,7 +73,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             request_id = %Uuid::new_v4(),
             )
         })
-        .add_service(HimalayaGRPCServer::new(server))
+        .add_service(HimalayaGRPCServer::new(external_server))
+        .add_service(HimalayaInternalServer::new(internal_server))
         .serve(addr)
         .await?;
 

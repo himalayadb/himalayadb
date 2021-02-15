@@ -13,6 +13,7 @@ use std::cmp::Ordering;
 pub struct NodeMetadata {
     pub identifier: String,
     pub token: i64,
+    pub host: String,
 }
 
 impl PartialOrd for NodeMetadata {
@@ -32,6 +33,7 @@ impl From<ProtoNodeMetadata> for NodeMetadata {
         NodeMetadata {
             identifier: nm.identifier,
             token: nm.token,
+            host: nm.host,
         }
     }
 }

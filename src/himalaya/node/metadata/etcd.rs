@@ -48,6 +48,7 @@ impl MetadataProvider for EtcdMetadataProvider {
         let nm = ProtoNodeMetadata {
             identifier: r.identifier.clone(),
             token: r.token,
+            host: r.host.clone(),
         };
         let mut buf = Vec::new();
         nm.encode(&mut buf)?;
