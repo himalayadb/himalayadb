@@ -1,5 +1,4 @@
 use murmur3;
-use rand;
 
 pub enum Partitioner {
     Murmur3(Murmur3),

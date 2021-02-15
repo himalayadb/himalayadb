@@ -46,42 +46,58 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         }
     }
 
-    pub fn find_coordinator_and_replicas(&self, key: &[u8]) -> Option<(Rc<Node>, Vec<Rc<Node>>)> {
+    pub fn find_coordinator_and_replicas(
+        &self,
+        key: &[u8],
+        num_replicas: usize,
+    ) -> Option<(Rc<Node>, Vec<Rc<Node>>)> {
         let tk = self.partitioner.partition(key);
         let list = self.nodes_list.try_read().ok()?;
-        let len = list.len();
-        let mut found = len;
-        for (i, x) in list.iter().enumerate() {
-            if tk < x.metadata.token {
+        if num_replicas > list.len() {
+            None
+        } else {
+            Some(Topology::<Provider>::get_coordinator_and_replicas(
+                num_replicas as usize,
+                tk,
+                list.as_slice(),
+            ))
+        }
+    }
+
+    fn get_coordinator_and_replicas(
+        num_replicas: usize,
+        token: i64,
+        nodes: &[Rc<Node>],
+    ) -> (Rc<Node>, Vec<Rc<Node>>) {
+        let num_nodes = nodes.len();
+        assert!(num_replicas < num_nodes);
+
+        let mut found = num_nodes;
+        for (i, x) in nodes.iter().enumerate() {
+            if token > x.metadata.token {
                 continue;
             }
             found = i;
             break;
         }
 
-        let replicas = 2;
-        let len = list.len();
-        let mut replica_nodes = Vec::new();
-
-        let mut start = found;
         let mut coordinator = found;
-
         // did not find coordinator
-        if coordinator == len {
-            coordinator = len - 1;
-            start = 0;
+        if coordinator == num_nodes {
+            coordinator = 0;
         }
 
-        for n in start..(start + replicas) {
-            // replicas
-            if n > len {
-                replica_nodes.push(list[n % len].clone());
+        let replica_start = coordinator + 1;
+        let mut replica_nodes = Vec::new();
+        for n in replica_start..(num_replicas + replica_start) {
+            if n >= num_nodes {
+                replica_nodes.push(nodes[n % num_nodes].clone());
             } else {
-                replica_nodes.push(list[n].clone());
+                replica_nodes.push(nodes[n].clone());
             }
         }
 
-        Some((list[coordinator].clone(), replica_nodes))
+        (nodes[coordinator].clone(), replica_nodes)
     }
 
     async fn watch(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -142,6 +158,48 @@ mod test {
     use crate::node::metadata::{EtcdMetadataProvider, EtcdMetadataProviderConfig, NodeMetadata};
     use tokio::sync::oneshot;
 
+    #[test]
+    fn test_find_coordinator() {
+        let tests = vec![
+            (4, 1, 5, vec![10]),
+            (12, 4, 15, vec![23, 0, 5, 10]),
+            (18, 2, 23, vec![0, 5]),
+            (26, 2, 0, vec![5, 10]),
+        ];
+
+        let mut nodes = Vec::new();
+        for i in vec![0, 5, 10, 15, 23] {
+            nodes.push(Rc::new(Node::new(NodeMetadata {
+                identifier: "test".to_string(),
+                token: i,
+            })));
+        }
+
+        for (token, replicas, expected_coordinator, expected_replica_ids) in tests {
+            let (coordinator, replicas) =
+                Topology::<EtcdMetadataProvider>::get_coordinator_and_replicas(
+                    replicas,
+                    token,
+                    nodes.as_slice(),
+                );
+            assert_eq!(
+                Node::new(NodeMetadata {
+                    identifier: "test".to_string(),
+                    token: expected_coordinator
+                }),
+                *coordinator
+            );
+
+            assert_eq!(
+                expected_replica_ids,
+                replicas
+                    .iter()
+                    .map(|x| x.metadata.token)
+                    .collect::<Vec<i64>>()
+            );
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_can_find_coordinator() {
         let provider = EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
@@ -189,7 +247,7 @@ mod test {
 
         let (k, _) = ("hello", "world");
         let _ = topology
-            .find_coordinator(k.as_bytes())
+            .find_coordinator_and_replicas(k.as_bytes(), 2)
             .expect("could not find coordinator");
     }
 

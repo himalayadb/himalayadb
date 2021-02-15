@@ -67,7 +67,7 @@ impl MetadataProvider for EtcdMetadataProvider {
                 EtcdMetadataProvider::LEASE_TTL - 5,
             )));
 
-            while let Some(i) = interval.next().await {
+            while let Some(_i) = interval.next().await {
                 if client.lease_keep_alive(lease_id).await.is_err() {
                     println!("failed to send keep alive");
                     return;
