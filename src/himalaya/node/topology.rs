@@ -15,15 +15,6 @@ pub struct Topology<MetaProvider> {
 }
 
 impl<Provider: MetadataProvider> Topology<Provider> {
-    pub fn find_coordinator(&self, key: &[u8]) -> Option<Rc<Node>> {
-        let tk = self.partitioner.partition(key);
-        let map = self.nodes.read().ok()?;
-
-        map.iter().take(1).next().map(|(k, v)| Rc::clone(v))
-    }
-}
-
-impl<Provider: MetadataProvider> Topology<Provider> {
     pub fn new(
         nodes: HashMap<String, Rc<Node>>,
         provider: Provider,
@@ -45,6 +36,13 @@ impl<Provider: MetadataProvider> Topology<Provider> {
                 Ok(())
             }
         }
+    }
+
+    pub fn find_coordinator(&self, key: &[u8]) -> Option<Rc<Node>> {
+        let tk = self.partitioner.partition(key);
+        let map = self.nodes.read().ok()?;
+
+        map.iter().take(1).next().map(|(_, v)| Rc::clone(v))
     }
 
     async fn watch(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -70,11 +68,7 @@ impl<Provider: MetadataProvider> Topology<Provider> {
 
     pub fn get_node(&self, identifier: &str) -> Option<Rc<Node>> {
         let map = self.nodes.try_read().ok()?;
-        if let Some(nm) = map.get(identifier) {
-            Some(Rc::clone(nm))
-        } else {
-            None
-        }
+        map.get(identifier).map(|n| Rc::clone(n))
     }
 
     fn add_node(&self, node: Node) -> Option<Rc<Node>> {
