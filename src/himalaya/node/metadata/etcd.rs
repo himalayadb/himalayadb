@@ -3,13 +3,13 @@ use crate::node::metadata::{
 };
 use prost::Message;
 
-use crate::server::himalaya_internal::NodeMetadata as ProtoNodeMetadata;
+use crate::proto::himalaya_internal::NodeMetadata as ProtoNodeMetadata;
 
 use async_trait::async_trait;
 use etcd_client::{Client, EventType, GetOptions, PutOptions, WatchOptions, WatchStream, Watcher};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::time::{self, Duration, Instant};
+use tokio::time::{self, Duration};
 use tokio_stream::wrappers::IntervalStream;
 use tokio_stream::Stream;
 use tokio_stream::StreamExt;

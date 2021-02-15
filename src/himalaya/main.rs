@@ -1,3 +1,5 @@
+use himalaya::proto::himalaya::himalaya_server::HimalayaServer as HimalayaGRPCServer;
+use himalaya::server::HimalayaServer;
 use tonic::transport::Server;
 use tracing::subscriber::set_global_default;
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
@@ -5,8 +7,6 @@ use tracing_log::LogTracer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Registry};
 use uuid::Uuid;
-
-use himalaya::server::{HimalayaServer, HimalayaGRPCServer};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

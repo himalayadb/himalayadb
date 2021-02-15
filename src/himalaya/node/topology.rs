@@ -1,4 +1,4 @@
-use crate::node::metadata::{MetadataProvider, NodeWatchEvent, NodeWatcher};
+use crate::node::metadata::{MetadataProvider, NodeWatchEvent};
 use crate::node::partitioner::{Murmur3, Partitioner};
 use crate::node::Node;
 use tokio_stream::StreamExt;
@@ -77,12 +77,12 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         }
     }
 
-    pub fn add_node(&self, node: Node) -> Option<Rc<Node>> {
+    fn add_node(&self, node: Node) -> Option<Rc<Node>> {
         let mut map = self.nodes.try_write().ok()?;
         map.insert(node.metadata.identifier.clone(), Rc::new(node))
     }
 
-    pub fn remove_node(&self, identifier: &str) -> Option<Rc<Node>> {
+    fn remove_node(&self, identifier: &str) -> Option<Rc<Node>> {
         let mut map = self.nodes.try_write().ok()?;
         map.remove(identifier)
     }

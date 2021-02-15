@@ -1,13 +1,7 @@
-mod himalaya {
-    tonic::include_proto!("himalaya");
-}
-
-pub mod himalaya_internal {
-    tonic::include_proto!("himalaya.internal");
-}
-
-pub use himalaya::himalaya_server::HimalayaServer as HimalayaGRPCServer;
-
+use crate::proto::himalaya::himalaya_server::Himalaya;
+use crate::proto::himalaya::{
+    DeleteRequest, DeleteResponse, GetRequest, GetResponse, PutRequest, PutResponse,
+};
 use tonic::{Request, Response, Status};
 use tracing::field::debug;
 use tracing::Span;
@@ -36,7 +30,7 @@ impl AsRef<Vec<u8>> for Key {
 pub struct HimalayaServer {}
 
 #[tonic::async_trait]
-impl himalaya::himalaya_server::Himalaya for HimalayaServer {
+impl Himalaya for HimalayaServer {
     #[tracing::instrument(
         name = "Get value",
         skip(request),
@@ -44,13 +38,10 @@ impl himalaya::himalaya_server::Himalaya for HimalayaServer {
             key = tracing::field::Empty
         )
     )]
-    async fn get(
-        &self,
-        request: Request<himalaya::GetRequest>,
-    ) -> Result<Response<himalaya::GetResponse>, Status> {
+    async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
         let get = request.into_inner();
         let _ = Key::parse(get.key).map_err(|e| Status::invalid_argument(e))?;
-        Ok(Response::new(himalaya::GetResponse {
+        Ok(Response::new(GetResponse {
             key: vec![0, 1, 2, 3],
             value: vec![0, 1, 2, 3],
         }))
@@ -63,14 +54,11 @@ impl himalaya::himalaya_server::Himalaya for HimalayaServer {
             key = tracing::field::Empty
         )
     )]
-    async fn put(
-        &self,
-        request: Request<himalaya::PutRequest>,
-    ) -> Result<Response<himalaya::PutResponse>, Status> {
+    async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutResponse>, Status> {
         let put = request.into_inner();
         let _ = Key::parse(put.key).map_err(|e| Status::invalid_argument(e))?;
 
-        Ok(Response::new(himalaya::PutResponse {}))
+        Ok(Response::new(PutResponse {}))
     }
 
     #[tracing::instrument(
@@ -82,10 +70,10 @@ impl himalaya::himalaya_server::Himalaya for HimalayaServer {
     )]
     async fn delete(
         &self,
-        request: Request<himalaya::DeleteRequest>,
-    ) -> Result<Response<himalaya::DeleteResponse>, Status> {
+        request: Request<DeleteRequest>,
+    ) -> Result<Response<DeleteResponse>, Status> {
         let delete = request.into_inner();
         let _ = Key::parse(delete.key).map_err(|e| Status::invalid_argument(e))?;
-        Ok(Response::new(himalaya::DeleteResponse {}))
+        Ok(Response::new(DeleteResponse {}))
     }
 }
