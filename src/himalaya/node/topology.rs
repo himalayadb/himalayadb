@@ -1,4 +1,4 @@
-use crate::node::metadata::{MetadataProvider, NodeWatchEvent, NodeWatcher};
+use crate::node::metadata::{MetadataProvider, NodeWatchEvent};
 use crate::node::partitioner::{Murmur3, Partitioner};
 use crate::node::Node;
 use tokio_stream::StreamExt;
@@ -12,15 +12,6 @@ pub struct Topology<MetaProvider> {
     nodes: Arc<RwLock<HashMap<String, Rc<Node>>>>,
     provider: MetaProvider,
     partitioner: Partitioner,
-}
-
-impl<Provider: MetadataProvider> Topology<Provider> {
-    pub fn find_coordinator(&self, key: &[u8]) -> Option<Rc<Node>> {
-        let tk = self.partitioner.partition(key);
-        let map = self.nodes.read().ok()?;
-
-        map.iter().take(1).next().map(|(k, v)| Rc::clone(v))
-    }
 }
 
 impl<Provider: MetadataProvider> Topology<Provider> {
@@ -47,6 +38,13 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         }
     }
 
+    pub fn find_coordinator(&self, key: &[u8]) -> Option<Rc<Node>> {
+        let tk = self.partitioner.partition(key);
+        let map = self.nodes.read().ok()?;
+
+        map.iter().take(1).next().map(|(_, v)| Rc::clone(v))
+    }
+
     async fn watch(&self) -> Result<(), Box<dyn std::error::Error>> {
         loop {
             let mut sub = self.provider.subscribe().await?;
@@ -70,19 +68,15 @@ impl<Provider: MetadataProvider> Topology<Provider> {
 
     pub fn get_node(&self, identifier: &str) -> Option<Rc<Node>> {
         let map = self.nodes.try_read().ok()?;
-        if let Some(nm) = map.get(identifier) {
-            Some(Rc::clone(nm))
-        } else {
-            None
-        }
+        map.get(identifier).map(|n| Rc::clone(n))
     }
 
-    pub fn add_node(&self, node: Node) -> Option<Rc<Node>> {
+    fn add_node(&self, node: Node) -> Option<Rc<Node>> {
         let mut map = self.nodes.try_write().ok()?;
         map.insert(node.metadata.identifier.clone(), Rc::new(node))
     }
 
-    pub fn remove_node(&self, identifier: &str) -> Option<Rc<Node>> {
+    fn remove_node(&self, identifier: &str) -> Option<Rc<Node>> {
         let mut map = self.nodes.try_write().ok()?;
         map.remove(identifier)
     }
