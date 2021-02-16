@@ -25,6 +25,7 @@ message DeleteResponse {}
 message PutRequest {
   bytes key = 1;
   bytes value = 2;
+  repeated string replicas = 3;
 }
 
 message PutResponse {}

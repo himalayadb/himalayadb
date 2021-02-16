@@ -155,6 +155,8 @@ mod test {
 
     use super::*;
     use crate::node::metadata::{EtcdMetadataProvider, EtcdMetadataProviderConfig, NodeMetadata};
+    use crate::node::partitioner::Murmur3;
+    use std::rc::Rc;
     use tokio::sync::oneshot;
 
     #[test]
@@ -182,6 +184,7 @@ mod test {
                 );
             assert_eq!(
                 Node::new(NodeMetadata {
+                    host: "test".to_string(),
                     identifier: "test".to_string(),
                     token: expected_coordinator
                 }),
@@ -215,7 +218,7 @@ mod test {
         let topology = Topology::new(
             existing_nodes
                 .into_iter()
-                .map(|x| (x.identifier.clone(), Rc::new(Node::new(x))))
+                .map(|x| (x.identifier.clone(), Arc::new(Node::new(x))))
                 .collect(),
             provider,
             partitioner,
@@ -233,6 +236,7 @@ mod test {
 
             let _registration = provider
                 .node_register(&NodeMetadata {
+                    host: "test".to_string(),
                     token: 1,
                     identifier: format!("node_{:?}", 1),
                 })
@@ -274,6 +278,8 @@ mod test {
             for n in 1..10 {
                 let _registration = provider
                     .node_register(&NodeMetadata {
+                        host: "test".to_string(),
+
                         token: n,
                         identifier: format!("node_{:?}", n),
                     })
@@ -292,7 +298,11 @@ mod test {
                 .get_node(&identifier)
                 .expect(&format!("{:?} not found", identifier));
             assert_eq!(
-                &Node::new(NodeMetadata { identifier, token }),
+                &Node::new(NodeMetadata {
+                    host: "test".to_string(),
+                    identifier,
+                    token
+                }),
                 expected.borrow()
             )
         }

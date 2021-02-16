@@ -9,8 +9,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     {
         let request = tonic::Request::new(himalaya::PutRequest {
-            key: vec![0, 1, 2, 3],
-            value: vec![0, 1, 2, 3],
+            key: vec![b'1'],
+            value: vec![b's', b'p'],
         });
 
         let response = client.put(request).await?;
@@ -19,9 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     {
-        let request = tonic::Request::new(himalaya::GetRequest {
-            key: vec![0, 1, 2, 3],
-        });
+        let request = tonic::Request::new(himalaya::GetRequest { key: vec![b'1'] });
 
         let response = client.get(request).await?;
 

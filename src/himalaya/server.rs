@@ -12,6 +12,8 @@ use crate::proto::himalaya_internal::{
     GetRequest as InternalGetRequest, GetResponse as InternalGetResponse,
     PutRequest as InternalPutRequest, PutResponse as InternalPutResponse,
 };
+use crate::storage::PersistentStore;
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use tracing::field::debug;
 use tracing::Span;
@@ -39,11 +41,20 @@ impl AsRef<Vec<u8>> for Key {
 pub struct HimalayaServer<MetaProvider> {
     topology: Topology<MetaProvider>,
     node: Node,
+    storage: Arc<PersistentStore>,
 }
 
 impl<MetaProvider> HimalayaServer<MetaProvider> {
-    pub fn new(node: Node, topology: Topology<MetaProvider>) -> Self {
-        Self { node, topology }
+    pub fn new(
+        node: Node,
+        topology: Topology<MetaProvider>,
+        storage: Arc<PersistentStore>,
+    ) -> Self {
+        Self {
+            node,
+            topology,
+            storage,
+        }
     }
 }
 
@@ -60,11 +71,18 @@ impl<MetaProvider: MetadataProvider + Send + Sync + 'static> Himalaya
     )]
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
         let get = request.into_inner();
-        let _ = Key::parse(get.key).map_err(|e| Status::invalid_argument(e))?;
-        Ok(Response::new(GetResponse {
-            key: vec![0, 1, 2, 3],
-            value: vec![0, 1, 2, 3],
-        }))
+        let key = Key::parse(get.key).map_err(|e| Status::invalid_argument(e))?;
+        match self.storage.get(&key.0) {
+            Ok(Some(v)) => Ok(Response::new(GetResponse {
+                key: key.0,
+                value: v,
+            })),
+            Ok(None) => Ok(Response::new(GetResponse {
+                key: key.0,
+                value: vec![],
+            })),
+            Err(e) => Err(Status::internal(e)),
+        }
     }
 
     #[tracing::instrument(
@@ -82,13 +100,29 @@ impl<MetaProvider: MetadataProvider + Send + Sync + 'static> Himalaya
             self.topology.find_coordinator_and_replicas(&key.0, 0)
         {
             if *coordinator == self.node {
-                // get the value myself
+                self.storage
+                    .put(&key.0, &put.value)
+                    .map_err(|e| Status::internal(e))?;
+
+                for replica in replicas {
+                    let mut client = HimalayaInternalClient::connect(replica.metadata.host.clone())
+                        .await
+                        .map_err(|e| Status::internal("failed to propagate request"))?;
+                    client
+                        .put(InternalPutRequest {
+                            replicas: Vec::new(),
+                            key: key.0.clone(),
+                            value: put.value.clone(),
+                        })
+                        .await?;
+                }
             } else {
                 let mut client = HimalayaInternalClient::connect(coordinator.metadata.host.clone())
                     .await
                     .map_err(|e| Status::internal("failed to propagate request"))?;
                 client
                     .put(InternalPutRequest {
+                        replicas: replicas.iter().map(|n| n.metadata.host.clone()).collect(),
                         key: key.0,
                         value: put.value,
                     })
@@ -116,11 +150,13 @@ impl<MetaProvider: MetadataProvider + Send + Sync + 'static> Himalaya
     }
 }
 
-pub struct InternalHimalayaServer {}
+pub struct InternalHimalayaServer {
+    storage: Arc<PersistentStore>,
+}
 
 impl InternalHimalayaServer {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(storage: Arc<PersistentStore>) -> Self {
+        Self { storage }
     }
 }
 
@@ -130,7 +166,28 @@ impl HimalayaInternal for InternalHimalayaServer {
         &self,
         request: Request<InternalPutRequest>,
     ) -> Result<Response<InternalPutResponse>, Status> {
-        unimplemented!()
+        let put = request.into_inner();
+        let key = Key::parse(put.key).map_err(|e| Status::invalid_argument(e))?;
+
+        //Put in DB
+        self.storage
+            .put(&key.0, &put.value)
+            .map_err(|e| Status::internal(e))?;
+
+        // send to replicas
+        for replica in put.replicas {
+            let mut client = HimalayaInternalClient::connect(replica)
+                .await
+                .map_err(|e| Status::internal("failed to propagate request"))?;
+            client
+                .put(InternalPutRequest {
+                    replicas: Vec::new(),
+                    key: key.0.clone(),
+                    value: put.value.clone(),
+                })
+                .await?;
+        }
+        Ok(Response::new(InternalPutResponse {}))
     }
 
     async fn get(
