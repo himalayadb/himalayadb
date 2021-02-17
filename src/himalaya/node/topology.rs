@@ -156,7 +156,6 @@ mod test {
     use super::*;
     use crate::node::metadata::{EtcdMetadataProvider, EtcdMetadataProviderConfig, NodeMetadata};
     use crate::node::partitioner::Murmur3;
-    use std::rc::Rc;
     use tokio::sync::oneshot;
 
     #[test]
@@ -184,7 +183,7 @@ mod test {
                 );
             assert_eq!(
                 Node::new(NodeMetadata {
-                    host: "test".to_string(),
+                    host: "127.0.0.1:50051".to_string(),
                     identifier: "test".to_string(),
                     token: expected_coordinator
                 }),

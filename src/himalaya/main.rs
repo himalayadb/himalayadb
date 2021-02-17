@@ -1,3 +1,6 @@
+use himalaya::coordinator::Coordinator;
+use himalaya::external_server::HimalayaServer;
+use himalaya::internal_server::InternalHimalayaServer;
 use himalaya::node::metadata::{
     EtcdMetadataProvider, EtcdMetadataProviderConfig, MetadataProvider, NodeMetadata,
 };
@@ -6,10 +9,8 @@ use himalaya::node::topology::Topology;
 use himalaya::node::Node;
 use himalaya::proto::himalaya::himalaya_server::HimalayaServer as HimalayaGRPCServer;
 use himalaya::proto::himalaya_internal::himalaya_internal_server::HimalayaInternalServer;
-use himalaya::server::{HimalayaServer, InternalHimalayaServer};
 use himalaya::storage::rocksbd::RocksDb as RocksClient;
 use himalaya::storage::PersistentStore;
-use himalaya::storage::PersistentStore::RocksDb;
 use std::sync::Arc;
 use tonic::transport::Server;
 use tracing::subscriber::set_global_default;
@@ -61,9 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Partitioner::Murmur3(Murmur3 {}),
     );
 
+    let coordinator = Arc::new(Coordinator::new(vec![node], topology));
     let storage = Arc::new(PersistentStore::RocksDb(RocksClient::create("./test")?));
-    let external_server = HimalayaServer::new(node, topology, storage.clone());
-    let internal_server = InternalHimalayaServer::new(storage);
+    let external_server = HimalayaServer::new(coordinator.clone(), storage.clone());
+    let internal_server = InternalHimalayaServer::new(coordinator.clone(), storage.clone());
 
     Server::builder()
         .trace_fn(|headers| {
