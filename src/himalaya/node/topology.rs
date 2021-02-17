@@ -45,6 +45,7 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         }
     }
 
+    #[tracing::instrument(name = "Finding Coordinator", skip(self, key))]
     pub fn find_coordinator_and_replicas(
         &self,
         key: &[u8],
@@ -63,6 +64,7 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         }
     }
 
+    #[tracing::instrument(name = "Getting Replicas for token", skip(nodes))]
     fn get_coordinator_and_replicas(
         num_replicas: usize,
         token: i64,
@@ -135,7 +137,6 @@ impl<Provider: MetadataProvider> Topology<Provider> {
 
         let mut map = self.nodes.try_write().ok()?;
         map.insert(nrc.metadata.identifier.clone(), nrc)
-
     }
 
     fn remove_node(&self, identifier: &str) -> Option<Arc<Node>> {

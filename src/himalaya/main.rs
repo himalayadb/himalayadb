@@ -1,3 +1,4 @@
+use clap::{load_yaml, App, AppSettings};
 use himalaya::coordinator::Coordinator;
 use himalaya::external_server::HimalayaServer;
 use himalaya::internal_server::InternalHimalayaServer;
@@ -12,6 +13,7 @@ use himalaya::proto::himalaya_internal::himalaya_internal_server::HimalayaIntern
 use himalaya::storage::rocksbd::RocksDb as RocksClient;
 use himalaya::storage::PersistentStore;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 use tonic::transport::Server;
 use tracing::subscriber::set_global_default;
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
@@ -19,8 +21,6 @@ use tracing_log::LogTracer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Registry};
 use uuid::Uuid;
-use clap::{App, load_yaml, AppSettings};
-use tokio::sync::oneshot;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,13 +38,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // parse given arguments
     let yaml = load_yaml!("options.yaml");
-    let matches = App::from(yaml).setting(AppSettings::AllowNegativeNumbers).get_matches();
+    let matches = App::from(yaml)
+        .setting(AppSettings::AllowNegativeNumbers)
+        .get_matches();
 
     let mut bind_port = 50051;
     if let Some(p) = matches.value_of("port") {
         bind_port = p.parse::<u32>().unwrap();
     }
-
 
     let mut replicas = 0;
     if let Some(r) = matches.value_of("replicas") {
@@ -61,9 +62,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         etcd_port = e.parse::<u32>().unwrap();
     }
 
-    let token = matches.value_of("token").expect("You must provide an initial token.").parse::<i64>().unwrap();
-    let identifier  = matches.value_of("identifier").expect("You must provide an identifier for this node.");
-    let rocksdb_path= matches.value_of("rocksdb_path").expect("You must provide a rocksdb path.");
+    let token = matches
+        .value_of("token")
+        .expect("You must provide an initial token.")
+        .parse::<i64>()
+        .unwrap();
+    let identifier = matches
+        .value_of("identifier")
+        .expect("You must provide an identifier for this node.");
+    let rocksdb_path = matches
+        .value_of("rocksdb_path")
+        .expect("You must provide a rocksdb path.");
 
     let addr = format!("[::1]:{}", bind_port);
 
@@ -95,11 +104,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Partitioner::Murmur3(Murmur3 {}),
     ));
 
-    let (tx, rx) = oneshot::channel::<()>();
-
+    let (_tx, rx) = oneshot::channel::<()>();
     let t = topology.clone();
     tokio::spawn(async move {
-        t.start(rx).await;
+        tracing::info!("Monitoring topology.");
+        if let Err(e) = t.start(rx).await {
+            tracing::error!(error = %e, "stopped monitoring topology");
+        };
     });
 
     let coordinator = Arc::new(Coordinator::new(vec![node], topology, replicas));

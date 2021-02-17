@@ -7,27 +7,50 @@ use crate::storage::PersistentStore;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tracing::field::debug;
+use tracing::Span;
 
 pub struct Coordinator<MetaProvider> {
     nodes: Vec<Node>,
     topology: Arc<Topology<MetaProvider>>,
-    num_replicas: usize
+    num_replicas: usize,
 }
 
 impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
-    pub fn new(nodes: Vec<Node>, topology: Arc<Topology<MetaProvider>>, num_replicas: usize) -> Self {
-        Self { nodes, topology, num_replicas }
+    pub fn new(
+        nodes: Vec<Node>,
+        topology: Arc<Topology<MetaProvider>>,
+        num_replicas: usize,
+    ) -> Self {
+        Self {
+            nodes,
+            topology,
+            num_replicas,
+        }
     }
 
+    #[tracing::instrument(
+        name = "Get value with coordinator",
+        skip(self, key, storage),
+        fields(
+            coordinator = tracing::field::Empty,
+            replicas = tracing::field::Empty
+        )
+    )]
     pub async fn get<K: AsRef<[u8]>>(
         &self,
         key: K,
         storage: &PersistentStore,
     ) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
-        if let Some((coordinator, mut replicas)) =
-            self.topology.find_coordinator_and_replicas(key.as_ref(), self.num_replicas)
+        if let Some((coordinator, mut replicas)) = self
+            .topology
+            .find_coordinator_and_replicas(key.as_ref(), self.num_replicas)
         {
+            Span::current().record("coordinator", &debug(&coordinator));
+            Span::current().record("replicas", &debug(&replicas));
+
             return if self.nodes.contains(&coordinator) {
+                tracing::info!("coordinator processing get request");
                 match storage.get(&key) {
                     Ok(v) => Ok(v),
                     Err(e) => {
@@ -37,6 +60,7 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
                     }
                 }
             } else {
+                tracing::info!("forwarding get to replicas");
                 replicas.push(coordinator);
                 let replicas = replicas.iter().map(|r| r.metadata.host.clone()).collect();
                 self.get_from_replicas(&key.as_ref(), &replicas).await
@@ -46,23 +70,40 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         Ok(None)
     }
 
+    #[tracing::instrument(
+        name = "Put value with coordinator",
+        skip(self, key, value, storage),
+        fields(
+            coordinator = tracing::field::Empty,
+            replicas = tracing::field::Empty
+        )
+    )]
     pub async fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(
         &self,
         key: K,
         value: V,
         storage: &PersistentStore,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some((coordinator, replicas)) =
-            self.topology.find_coordinator_and_replicas(key.as_ref(), self.num_replicas)
+        if let Some((coordinator, replicas)) = self
+            .topology
+            .find_coordinator_and_replicas(key.as_ref(), self.num_replicas)
         {
+            Span::current().record("coordinator", &debug(&coordinator));
+            Span::current().record("replicas", &debug(&replicas));
+
             return if self.nodes.contains(&coordinator) {
+                tracing::info!("coordinator processing put and replicating data");
                 storage.put(&key, &value)?;
                 let replicas = replicas.iter().map(|r| r.metadata.host.clone()).collect();
                 self.replicate_data(key.as_ref(), value.as_ref(), &replicas)
                     .await
             } else {
-                let mut client =
-                    HimalayaInternalClient::connect(format!("http://{}", coordinator.metadata.host)).await?;
+                tracing::info!("forwarding put request to coordinator");
+                let mut client = HimalayaInternalClient::connect(format!(
+                    "http://{}",
+                    coordinator.metadata.host
+                ))
+                .await?;
                 client
                     .put(PutRequest {
                         key: key.as_ref().to_vec(),
@@ -77,20 +118,34 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         }
     }
 
+    #[tracing::instrument(
+        name = "Delete value with coordinator",
+        skip(self, key, storage),
+        fields(
+            coordinator = tracing::field::Empty,
+            replicas = tracing::field::Empty
+        )
+    )]
     pub async fn delete<K: AsRef<[u8]>>(
         &self,
         key: K,
         storage: &PersistentStore,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some((coordinator, mut replicas)) =
-            self.topology.find_coordinator_and_replicas(key.as_ref(), self.num_replicas)
+        if let Some((coordinator, mut replicas)) = self
+            .topology
+            .find_coordinator_and_replicas(key.as_ref(), self.num_replicas)
         {
+            Span::current().record("coordinator", &debug(&coordinator));
+            Span::current().record("replicas", &debug(&replicas));
+
             return if self.nodes.contains(&coordinator) {
+                tracing::info!("coordinator processing and replicating deletion");
                 match storage.delete(&key) {
                     Ok(_) => self.delete_from_replicas(&key.as_ref(), &replicas).await,
                     Err(e) => Err(Box::from(e)),
                 }
             } else {
+                tracing::info!("forwarding deletion to replicas");
                 replicas.push(coordinator);
                 self.delete_from_replicas(&key.as_ref(), &replicas).await
             };
@@ -99,6 +154,7 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         Ok(())
     }
 
+    #[tracing::instrument(name = "Replicating data", skip(self, value))]
     pub async fn replicate_data(
         &self,
         key: &[u8],
@@ -119,6 +175,7 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         Ok(())
     }
 
+    #[tracing::instrument(name = "Deleting data from replicas", skip(self))]
     async fn delete_from_replicas(
         &self,
         key: &[u8],
@@ -135,6 +192,7 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         Ok(())
     }
 
+    #[tracing::instrument(name = "Fetching value from replicas", skip(self))]
     async fn get_from_replicas(
         &self,
         key: &[u8],
@@ -148,7 +206,8 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             let tx = tx.clone();
             let _handle: JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>> =
                 tokio::spawn(async move {
-                    let mut client = HimalayaInternalClient::connect(format!("http://{}", host)).await?;
+                    let mut client =
+                        HimalayaInternalClient::connect(format!("http://{}", host)).await?;
                     let response = client.get(GetRequest { key }).await?.into_inner();
                     tx.send(response.value).await?;
                     Ok(())
