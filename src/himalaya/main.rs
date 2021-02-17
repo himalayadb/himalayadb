@@ -19,6 +19,8 @@ use tracing_log::LogTracer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Registry};
 use uuid::Uuid;
+use clap::{App, load_yaml, AppSettings};
+use tokio::sync::oneshot;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -34,36 +36,74 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     set_global_default(subscriber).expect("Failed to set subscriber");
 
-    let addr = "[::1]:50051".parse()?;
+    // parse given arguments
+    let yaml = load_yaml!("options.yaml");
+    let matches = App::from(yaml).setting(AppSettings::AllowNegativeNumbers).get_matches();
+
+    let mut bind_port = 50051;
+    if let Some(p) = matches.value_of("port") {
+        bind_port = p.parse::<u32>().unwrap();
+    }
+
+
+    let mut replicas = 0;
+    if let Some(r) = matches.value_of("replicas") {
+        replicas = r.parse::<usize>().unwrap();
+    }
+
+    let mut etcd_host = "localhost";
+    if let Some(e) = matches.value_of("etcd_host") {
+        etcd_host = e
+    }
+
+    let mut etcd_port = 2379;
+    if let Some(e) = matches.value_of("etcd_port") {
+        etcd_port = e.parse::<u32>().unwrap();
+    }
+
+    let token = matches.value_of("token").expect("You must provide an initial token.").parse::<i64>().unwrap();
+    let identifier  = matches.value_of("identifier").expect("You must provide an identifier for this node.");
+    let rocksdb_path= matches.value_of("rocksdb_path").expect("You must provide a rocksdb path.");
+
+    let addr = format!("[::1]:{}", bind_port);
 
     tracing::info!(%addr, "Starting server.");
+    tracing::info!(%etcd_host, %etcd_port, "Configuring etcd connection.");
+    tracing::info!(%replicas, "Setting replica count.");
 
     let provider = EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
-        hosts: vec!["localhost:2379".to_owned()],
+        hosts: vec![format!("{}:{}", etcd_host, etcd_port)],
     })
     .await?;
 
     let node = Node::new(NodeMetadata {
-        identifier: "test".to_owned(),
-        token: 1,
-        host: "127.0.0.1:50051".to_owned(),
+        identifier: identifier.to_string(),
+        token,
+        host: addr.to_string(),
     });
 
     provider.node_register(&node.metadata).await?;
 
     let nodes = provider.node_list_all().await?;
 
-    let topology = Topology::new(
+    let topology = Arc::new(Topology::new(
         nodes
             .into_iter()
             .map(|x| (x.identifier.clone(), Arc::new(Node::new(x))))
             .collect(),
         provider,
         Partitioner::Murmur3(Murmur3 {}),
-    );
+    ));
 
-    let coordinator = Arc::new(Coordinator::new(vec![node], topology));
-    let storage = Arc::new(PersistentStore::RocksDb(RocksClient::create("./test")?));
+    let (tx, rx) = oneshot::channel::<()>();
+
+    let t = topology.clone();
+    tokio::spawn(async move {
+        t.start(rx).await;
+    });
+
+    let coordinator = Arc::new(Coordinator::new(vec![node], topology, replicas));
+    let storage = Arc::new(PersistentStore::RocksDb(RocksClient::create(rocksdb_path)?));
     let external_server = HimalayaServer::new(coordinator.clone(), storage.clone());
     let internal_server = InternalHimalayaServer::new(coordinator.clone(), storage.clone());
 
@@ -81,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .add_service(HimalayaGRPCServer::new(external_server))
         .add_service(HimalayaInternalServer::new(internal_server))
-        .serve(addr)
+        .serve(addr.parse()?)
         .await?;
 
     Ok(())

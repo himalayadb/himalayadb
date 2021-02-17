@@ -107,9 +107,11 @@ impl<Provider: MetadataProvider> Topology<Provider> {
                     for e in events {
                         match e {
                             NodeWatchEvent::LeftCluster(nm) => {
+                                tracing::info!(identifier=%nm.identifier.clone(), "Node left cluster.");
                                 self.remove_node(&nm.identifier);
                             }
                             NodeWatchEvent::JoinedCluster(nm) => {
+                                tracing::info!(identifier=%nm.identifier.clone(), "Node joined cluster.");
                                 self.add_node(Node::new(nm));
                             }
                         }
@@ -133,6 +135,7 @@ impl<Provider: MetadataProvider> Topology<Provider> {
 
         let mut map = self.nodes.try_write().ok()?;
         map.insert(nrc.metadata.identifier.clone(), nrc)
+
     }
 
     fn remove_node(&self, identifier: &str) -> Option<Arc<Node>> {
@@ -248,7 +251,7 @@ mod test {
 
         let (k, _) = ("hello", "world");
         let _ = topology
-            .find_coordinator_and_replicas(k.as_bytes(), 2)
+            .find_coordinator_and_replicas(k.as_bytes(), 0)
             .expect("could not find coordinator");
     }
 

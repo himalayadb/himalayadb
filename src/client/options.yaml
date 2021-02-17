@@ -1,0 +1,38 @@
+name: himalaya-client
+version: "1.0"
+author: Himalaya DB
+about: HimalayaDB Client
+args:
+  - host:
+      long: host
+      about: Sets the himalaya db host
+      required: true
+      takes_value: true
+  - port:
+      short: p
+      long: port
+      about: Sets the listening port
+      required: true
+      takes_value: true
+subcommands:
+  - write:
+      about: write a key
+      args:
+        - key:
+            short: k
+            about: The key to write
+            takes_value: true
+            required: true
+        - value:
+            short: v
+            about: The value to write
+            takes_value: true
+            required: true
+  - read:
+      about: read a key
+      args:
+        - key:
+            short: k
+            about: The key to read
+            takes_value: true
+            required: true

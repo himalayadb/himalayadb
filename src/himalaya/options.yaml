@@ -1,0 +1,44 @@
+name: himalaya
+version: "1.0"
+author: HimalayaDB
+about: HimalayaDB Server
+args:
+  - rocksdb_path:
+      long: rocksdb_path
+      about: Sets the rocksdb storage path
+      required: true
+      takes_value: true
+  - identifier:
+      short: i
+      long: identifier
+      about: Sets the node identifier
+      required: true
+      takes_value: true
+  - port:
+      short: p
+      long: port
+      about: Sets the listening port
+      required: true
+      takes_value: true
+  - replicas:
+      short: r
+      long: replicas
+      about: Sets the number of replicas
+      required: true
+      takes_value: true
+  - token:
+      short: t
+      long: token
+      about: The initial token this node is responsible for
+      required: true
+      takes_value: true
+  - etcd_host:
+      long: etcd_host
+      about: Sets the etcd host
+      required: true
+      takes_value: true
+  - etcd_port:
+      long: etcd_port
+      about: Sets the etcd port
+      required: true
+      takes_value: true
