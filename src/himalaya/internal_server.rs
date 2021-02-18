@@ -46,13 +46,15 @@ impl<MetaProvider: MetadataProvider + Send + Sync + 'static> HimalayaInternal
             Status::internal(e)
         })?;
 
-        self.coordinator
-            .replicate_data(&key.as_ref(), &put.value, &put.replicas)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "replication failed");
-                Status::internal("replication failed")
-            })?;
+        if !put.replicas.is_empty() {
+            self.coordinator
+                .replicate_data(&key.as_ref(), &put.value, &put.replicas)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, "replication failed");
+                    Status::internal("replication failed")
+                })?;
+        }
 
         Ok(Response::new(PutResponse {}))
     }

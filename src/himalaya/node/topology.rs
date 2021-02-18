@@ -129,14 +129,27 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         map.get(identifier).map(|n| n.clone())
     }
 
-    fn add_node(&self, node: Node) -> Option<Arc<Node>> {
-        let mut list = self.nodes_list.try_write().ok()?;
+    fn add_node(&self, node: Node) -> Result<(), Box<dyn std::error::Error + '_>> {
+        let mut map = self.nodes.try_write()?;
+        let mut list = self.nodes_list.try_write()?;
         let nrc = Arc::new(node);
-        list.push(nrc.clone());
-        list.sort();
 
-        let mut map = self.nodes.try_write().ok()?;
-        map.insert(nrc.metadata.identifier.clone(), nrc)
+        match map.insert(nrc.metadata.identifier.clone(), nrc.clone()) {
+            None => {
+                // did not exist in map
+                list.push(nrc);
+                list.sort();
+            }
+            Some(_) => {
+                //overwrite node
+                if let Ok(i) =
+                    list.binary_search_by(|n| n.metadata.identifier.cmp(&nrc.metadata.identifier))
+                {
+                    list[i] = nrc;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn remove_node(&self, identifier: &str) -> Option<Arc<Node>> {
@@ -169,6 +182,7 @@ mod test {
             (12, 4, 15, vec![23, 0, 5, 10]),
             (18, 2, 23, vec![0, 5]),
             (26, 2, 0, vec![5, 10]),
+            (26, 3, 0, vec![5, 10, 15]),
         ];
 
         let mut nodes = Vec::new();

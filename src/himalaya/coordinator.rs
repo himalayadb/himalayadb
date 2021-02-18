@@ -17,6 +17,7 @@ pub struct Coordinator<MetaProvider> {
     nodes: Vec<Node>,
     topology: Arc<Topology<MetaProvider>>,
     num_replicas: usize,
+    consistency: usize,
 }
 
 impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
@@ -24,11 +25,13 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         nodes: Vec<Node>,
         topology: Arc<Topology<MetaProvider>>,
         num_replicas: usize,
+        consistency: usize,
     ) -> Self {
         Self {
             nodes,
             topology,
             num_replicas,
+            consistency,
         }
     }
 
@@ -164,18 +167,52 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         value: &[u8],
         replicas: &Vec<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        for replica in replicas {
-            let mut client = HimalayaInternalClient::connect(format!("http://{}", replica)).await?;
-            client
-                .put(PutRequest {
-                    replicas: Vec::new(),
-                    key: key.to_vec(),
-                    value: value.to_vec(),
-                })
-                .await?;
+        if replicas.is_empty() {
+            return Ok(());
         }
 
-        Ok(())
+        let (tx, mut rx) = mpsc::channel(self.consistency);
+        for replica in replicas {
+            let k = key.to_vec();
+            let v = value.to_vec();
+            let tx = tx.clone();
+            let mut client = HimalayaInternalClient::connect(format!("http://{}", replica)).await?;
+            tokio::spawn(async move {
+                let result = client
+                    .put(PutRequest {
+                        replicas: Vec::new(),
+                        key: k,
+                        value: v,
+                    })
+                    .await;
+                tx.send(result).await?;
+                Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+            });
+        }
+
+        let mut count = 0;
+        loop {
+            let result = match timeout(Duration::from_millis(1000), rx.recv()).await {
+                Ok(Some(Ok(_))) => Ok(()),
+                Ok(Some(Err(_))) => Err(Box::from("a replica failed to put")),
+                Ok(None) => Ok(()),
+                Err(_) => {
+                    tracing::info!("timeout $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
+                    Err(Box::from("timeout occurred"))
+                }
+            };
+
+            match result {
+                Ok(()) => {
+                    count = count + 1;
+                    if count == self.consistency {
+                        rx.close();
+                        return Ok(());
+                    }
+                }
+                Err(s) => return Err(s),
+            };
+        }
     }
 
     #[tracing::instrument(name = "Deleting data from replicas", skip(self))]
@@ -207,17 +244,16 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             let key = key.clone().to_vec();
             let host = replica.clone();
             let tx = tx.clone();
-            let _handle: JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>> =
-                tokio::spawn(async move {
-                    let mut client =
-                        HimalayaInternalClient::connect(format!("http://{}", host)).await?;
-                    let response = client.get(GetRequest { key }).await?.into_inner();
-                    tx.send(response.value).await?;
-                    Ok(())
-                });
+            tokio::spawn(async move {
+                let mut client =
+                    HimalayaInternalClient::connect(format!("http://{}", host)).await?;
+                let response = client.get(GetRequest { key }).await?.into_inner();
+                tx.send(response.value).await?;
+                Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+            });
         }
 
-        match timeout(Duration::from_millis(100), rx.recv()).await {
+        match timeout(Duration::from_millis(10000), rx.recv()).await {
             Ok(Some(v)) => {
                 rx.close();
                 Ok(Some(v))

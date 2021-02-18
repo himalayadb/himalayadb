@@ -26,6 +26,12 @@ args:
       about: Sets the number of replicas
       required: true
       takes_value: true
+  - consistency:
+        short: c
+        long: consistency
+        about: Sets the consitency level
+        required: true
+        takes_value: true
   - token:
       short: t
       long: token

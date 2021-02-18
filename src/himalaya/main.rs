@@ -47,6 +47,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         bind_port = p.parse::<u32>().unwrap();
     }
 
+    let mut consistency = 1;
+    if let Some(r) = matches.value_of("consistency") {
+        consistency = r.parse::<usize>().unwrap();
+    }
+
     let mut replicas = 0;
     if let Some(r) = matches.value_of("replicas") {
         replicas = r.parse::<usize>().unwrap();
@@ -113,7 +118,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
     });
 
-    let coordinator = Arc::new(Coordinator::new(vec![node], topology, replicas));
+    let coordinator = Arc::new(Coordinator::new(
+        vec![node],
+        topology,
+        replicas,
+        consistency,
+    ));
     let storage = Arc::new(PersistentStore::RocksDb(RocksClient::create(rocksdb_path)?));
     let external_server = HimalayaServer::new(coordinator.clone(), storage.clone());
     let internal_server = InternalHimalayaServer::new(coordinator.clone(), storage.clone());
