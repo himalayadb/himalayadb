@@ -5,8 +5,11 @@ use crate::proto::himalaya_internal::himalaya_internal_client::HimalayaInternalC
 use crate::proto::himalaya_internal::{DeleteRequest, GetRequest, PutRequest};
 use crate::storage::PersistentStore;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tokio::time::timeout;
+use tokio_stream::StreamExt;
 use tracing::field::debug;
 use tracing::Span;
 
@@ -214,12 +217,13 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
                 });
         }
 
-        match rx.recv().await {
-            Some(v) => {
+        match timeout(Duration::from_millis(100), rx.recv()).await {
+            Ok(Some(v)) => {
                 rx.close();
                 Ok(Some(v))
             }
-            None => Err(Box::from("replication failed")),
+            Ok(None) => Err(Box::from("all replicas failed to get")),
+            Err(_) => Err(Box::from("timeout occurred")),
         }
     }
 }
