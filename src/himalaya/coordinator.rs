@@ -4,12 +4,15 @@ use crate::node::Node;
 use crate::proto::himalaya_internal::himalaya_internal_client::HimalayaInternalClient;
 use crate::proto::himalaya_internal::{DeleteRequest, GetRequest, PutRequest};
 use crate::storage::PersistentStore;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 use tokio::time::timeout;
-use tokio_stream::StreamExt;
+use tonic::transport::Channel;
+use tower::timeout::Timeout;
 use tracing::field::debug;
 use tracing::Span;
 
@@ -160,6 +163,27 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         Ok(())
     }
 
+    #[tracing::instrument(name = "Replicating data to node", skip(value), err)]
+    async fn replicate_to_node(
+        host: String,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+        let channel = Channel::from_shared(host)?.connect().await?;
+        let timeout_channel = Timeout::new(channel, Duration::from_millis(1));
+        let mut client = HimalayaInternalClient::new(timeout_channel);
+
+        client
+            .put(PutRequest {
+                replicas: Vec::new(),
+                key,
+                value,
+            })
+            .await?;
+
+        Ok(())
+    }
+
     #[tracing::instrument(name = "Replicating data", skip(self, value))]
     pub async fn replicate_data(
         &self,
@@ -171,48 +195,22 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             return Ok(());
         }
 
-        let (tx, mut rx) = mpsc::channel(self.consistency);
+        let (tx, rx) = mpsc::channel(replicas.len());
         for replica in replicas {
             let k = key.to_vec();
             let v = value.to_vec();
             let tx = tx.clone();
-            let mut client = HimalayaInternalClient::connect(format!("http://{}", replica)).await?;
+            let host = format!("http://{}", replica);
+
             tokio::spawn(async move {
-                let result = client
-                    .put(PutRequest {
-                        replicas: Vec::new(),
-                        key: k,
-                        value: v,
-                    })
-                    .await;
+                let result = Coordinator::<MetaProvider>::replicate_to_node(host, k, v).await;
                 tx.send(result).await?;
                 Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
             });
         }
 
-        let mut count = 0;
-        loop {
-            let result = match timeout(Duration::from_millis(1000), rx.recv()).await {
-                Ok(Some(Ok(_))) => Ok(()),
-                Ok(Some(Err(_))) => Err(Box::from("a replica failed to put")),
-                Ok(None) => Ok(()),
-                Err(_) => {
-                    tracing::info!("timeout $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
-                    Err(Box::from("timeout occurred"))
-                }
-            };
-
-            match result {
-                Ok(()) => {
-                    count = count + 1;
-                    if count == self.consistency {
-                        rx.close();
-                        return Ok(());
-                    }
-                }
-                Err(s) => return Err(s),
-            };
-        }
+        ConsistencyChecker::new(self.consistency, replicas.len(), rx).await?;
+        Ok(())
     }
 
     #[tracing::instrument(name = "Deleting data from replicas", skip(self))]
@@ -260,6 +258,62 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             }
             Ok(None) => Err(Box::from("all replicas failed to get")),
             Err(_) => Err(Box::from("timeout occurred")),
+        }
+    }
+}
+
+struct ConsistencyChecker {
+    replicated: usize,
+    failed: usize,
+    total: usize,
+    consistency: usize,
+    rx: mpsc::Receiver<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
+}
+
+impl ConsistencyChecker {
+    fn new(
+        consistency: usize,
+        total: usize,
+        rx: mpsc::Receiver<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
+    ) -> Self {
+        Self {
+            replicated: 0,
+            failed: 0,
+            total,
+            consistency,
+            rx,
+        }
+    }
+}
+
+impl Future for ConsistencyChecker {
+    type Output = Result<(), Box<dyn std::error::Error>>;
+
+    #[tracing::instrument(name = "Consistency Check", skip(self))]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.get_mut();
+
+        match this.rx.poll_recv(cx) {
+            Poll::Ready(res) => {
+                match res {
+                    Some(Ok(_)) => this.replicated += 1,
+                    Some(Err(e)) => this.failed += 1,
+                    None => return Poll::Ready(Ok(())),
+                };
+
+                if this.replicated == this.consistency {
+                    this.rx.close();
+                    return Poll::Ready(Ok(()));
+                }
+
+                if this.replicated + this.failed == this.total {
+                    this.rx.close();
+                    return Poll::Ready(Err(Box::from("replication failed")));
+                }
+
+                Poll::Pending
+            }
+            Poll::Pending => Poll::Pending,
         }
     }
 }

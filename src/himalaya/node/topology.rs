@@ -114,7 +114,9 @@ impl<Provider: MetadataProvider> Topology<Provider> {
                             }
                             NodeWatchEvent::JoinedCluster(nm) => {
                                 tracing::info!(identifier=%nm.identifier.clone(), "Node joined cluster.");
-                                self.add_node(Node::new(nm));
+                                if let Err(e) = self.add_node(Node::new(nm)) {
+                                    tracing::error!(error = %e, "failed to add node to topology");
+                                }
                             }
                         }
                     }
