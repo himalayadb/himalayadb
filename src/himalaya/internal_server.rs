@@ -6,6 +6,7 @@ use crate::proto::himalaya_internal::{
 };
 use crate::storage::PersistentStore;
 use crate::Key;
+use bytes::Bytes;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
@@ -75,7 +76,9 @@ impl<MetaProvider: MetadataProvider + Send + Sync + 'static> HimalayaInternal
 
         match self.storage.get(&key) {
             Ok(Some(value)) => Ok(Response::new(GetResponse { value })),
-            Ok(None) => Ok(Response::new(GetResponse { value: vec![] })),
+            Ok(None) => Ok(Response::new(GetResponse {
+                value: Bytes::new(),
+            })),
             Err(e) => {
                 tracing::error!(error = %e, "failed to get key");
                 Err(Status::internal(e))

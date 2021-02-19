@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use tracing::field::debug;
 use tracing::Span;
 
@@ -9,27 +10,27 @@ pub mod proto;
 pub mod storage;
 
 #[derive(Debug)]
-pub struct Key(Vec<u8>);
+pub struct Key(Bytes);
 
 impl Key {
-    pub fn parse(v: Vec<u8>) -> Result<Key, String> {
-        if v.len() > 0 {
-            Span::current().record("key", &debug(&v));
-            Ok(Self(v))
+    pub fn parse(k: Bytes) -> Result<Key, String> {
+        if k.len() > 0 {
+            Span::current().record("key", &debug(&k));
+            Ok(Self(k))
         } else {
             Err("empty key provided".to_owned())
         }
     }
 }
 
-impl AsRef<Vec<u8>> for Key {
-    fn as_ref(&self) -> &Vec<u8> {
+impl AsRef<[u8]> for Key {
+    fn as_ref(&self) -> &[u8] {
         &self.0
     }
 }
 
-impl AsRef<[u8]> for Key {
-    fn as_ref(&self) -> &[u8] {
+impl AsRef<Bytes> for Key {
+    fn as_ref(&self) -> &Bytes {
         &self.0
     }
 }

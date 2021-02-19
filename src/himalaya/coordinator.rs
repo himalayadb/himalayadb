@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 use tokio::time::timeout;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, Uri};
+
 use tower::timeout::Timeout;
 use tracing::field::debug;
 use tracing::Span;
@@ -17,6 +18,9 @@ use crate::node::Node;
 use crate::proto::himalaya_internal::himalaya_internal_client::HimalayaInternalClient;
 use crate::proto::himalaya_internal::{DeleteRequest, GetRequest, PutRequest};
 use crate::storage::PersistentStore;
+use bytes::Bytes;
+use std::str::FromStr;
+use tonic::codegen::http::uri::Authority;
 
 pub struct Coordinator<MetaProvider> {
     nodes: Vec<Node>,
@@ -48,11 +52,11 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             replicas = tracing::field::Empty
         )
     )]
-    pub async fn get<K: AsRef<[u8]>>(
+    pub async fn get(
         &self,
-        key: K,
+        key: &Bytes,
         storage: &PersistentStore,
-    ) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<Bytes>, Box<dyn std::error::Error>> {
         if let Some((coordinator, mut replicas)) = self
             .topology
             .find_coordinator_and_replicas(key.as_ref(), self.num_replicas)
@@ -67,14 +71,14 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
                     Err(e) => {
                         tracing::error!(error = %e, "failed to get from coordinator storage, attempting to fetch from replicas");
                         let replicas = replicas.iter().map(|r| r.metadata.host.clone()).collect();
-                        self.get_from_replicas(&key.as_ref(), &replicas).await
+                        self.get_from_replicas(&key, &replicas).await
                     }
                 }
             } else {
                 tracing::info!("forwarding get to replicas");
                 replicas.push(coordinator);
                 let replicas = replicas.iter().map(|r| r.metadata.host.clone()).collect();
-                self.get_from_replicas(&key.as_ref(), &replicas).await
+                self.get_from_replicas(&key, &replicas).await
             };
         }
 
@@ -89,10 +93,10 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             replicas = tracing::field::Empty
         )
     )]
-    pub async fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+    pub async fn put(
         &self,
-        key: K,
-        value: V,
+        key: Bytes,
+        value: Bytes,
         storage: &PersistentStore,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some((coordinator, replicas)) = self
@@ -106,8 +110,7 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
                 tracing::info!("coordinator processing put and replicating data");
                 storage.put(&key, &value)?;
                 let replicas = replicas.iter().map(|r| r.metadata.host.clone()).collect();
-                self.replicate_data(key.as_ref(), value.as_ref(), &replicas)
-                    .await
+                self.replicate_data(&key, &value, &replicas).await
             } else {
                 tracing::info!("forwarding put request to coordinator");
                 let mut client = HimalayaInternalClient::connect(format!(
@@ -117,8 +120,8 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
                 .await?;
                 client
                     .put(PutRequest {
-                        key: key.as_ref().to_vec(),
-                        value: value.as_ref().to_vec(),
+                        key,
+                        value,
                         replicas: replicas.iter().map(|r| r.metadata.host.clone()).collect(),
                     })
                     .await?;
@@ -137,9 +140,9 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             replicas = tracing::field::Empty
         )
     )]
-    pub async fn delete<K: AsRef<[u8]>>(
+    pub async fn delete(
         &self,
-        key: K,
+        key: &Bytes,
         storage: &PersistentStore,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some((coordinator, mut replicas)) = self
@@ -152,13 +155,13 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             return if self.nodes.contains(&coordinator) {
                 tracing::info!("coordinator processing and replicating deletion");
                 match storage.delete(&key) {
-                    Ok(_) => self.delete_from_replicas(&key.as_ref(), &replicas).await,
+                    Ok(_) => self.delete_from_replicas(&key, &replicas).await,
                     Err(e) => Err(Box::from(e)),
                 }
             } else {
                 tracing::info!("forwarding deletion to replicas");
                 replicas.push(coordinator);
-                self.delete_from_replicas(&key.as_ref(), &replicas).await
+                self.delete_from_replicas(&key, &replicas).await
             };
         }
 
@@ -168,10 +171,15 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
     #[tracing::instrument(name = "Replicating data to node", skip(value), err)]
     async fn replicate_to_node(
         host: String,
-        key: Vec<u8>,
-        value: Vec<u8>,
+        key: Bytes,
+        value: Bytes,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        let channel = Channel::from_shared(host)?.connect().await?;
+        let uri = Uri::builder()
+            .scheme("http")
+            .authority(Authority::from_str(&host)?)
+            .path_and_query("")
+            .build()?;
+        let channel = Channel::builder(uri).connect().await?;
         let timeout_channel = Timeout::new(channel, Duration::from_millis(100));
         let mut client = HimalayaInternalClient::new(timeout_channel);
 
@@ -189,8 +197,8 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
     #[tracing::instrument(name = "Replicating data", skip(self, value))]
     pub async fn replicate_data(
         &self,
-        key: &[u8],
-        value: &[u8],
+        key: &Bytes,
+        value: &Bytes,
         replicas: &Vec<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if replicas.is_empty() {
@@ -199,10 +207,10 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
 
         let (tx, rx) = mpsc::channel(replicas.len());
         for replica in replicas {
-            let k = key.to_vec();
-            let v = value.to_vec();
+            let k = key.clone();
+            let v = value.clone();
             let tx = tx.clone();
-            let host = format!("http://{}", replica);
+            let host = replica.clone();
 
             tokio::spawn(async move {
                 let result = Coordinator::<MetaProvider>::replicate_to_node(host, k, v).await;
@@ -218,11 +226,11 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
     #[tracing::instrument(name = "Deleting data from replicas", skip(self))]
     async fn delete_from_replicas(
         &self,
-        key: &[u8],
+        key: &Bytes,
         replicas: &Vec<Arc<Node>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         for ref replica in replicas {
-            let key = key.clone().to_vec();
+            let key = key.clone();
             let host = replica.metadata.host.clone();
 
             let mut client = HimalayaInternalClient::connect(format!("http://{}", host)).await?;
@@ -235,13 +243,13 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
     #[tracing::instrument(name = "Fetching value from replicas", skip(self))]
     async fn get_from_replicas(
         &self,
-        key: &[u8],
+        key: &Bytes,
         replicas: &Vec<String>,
-    ) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<Bytes>, Box<dyn std::error::Error>> {
         let (tx, mut rx) = mpsc::channel(1);
 
         for replica in replicas {
-            let key = key.clone().to_vec();
+            let key = key.clone();
             let host = replica.clone();
             let tx = tx.clone();
             tokio::spawn(async move {
@@ -291,7 +299,7 @@ impl ConsistencyChecker {
 impl Future for ConsistencyChecker {
     type Output = Result<(), Box<dyn std::error::Error>>;
 
-    #[tracing::instrument(name = "Consistency Check", skip(self))]
+    #[tracing::instrument(name = "Consistency Check", skip(self, cx))]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         loop {
             match self.rx.poll_recv(cx) {

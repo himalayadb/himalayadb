@@ -1,5 +1,6 @@
 use crate::storage::Error;
 use crate::storage::Error::{Configuration, DeleteError, GetError, PutError};
+use bytes::Bytes;
 use rocksdb::DB;
 use std::path::Path;
 
@@ -20,9 +21,9 @@ impl RocksDb {
         Ok(())
     }
 
-    pub(crate) fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Error> {
+    pub(crate) fn get(&self, key: &[u8]) -> Result<Option<Bytes>, Error> {
         match self.rocks.get(key) {
-            Ok(Some(v)) => Ok(Some(v)),
+            Ok(Some(v)) => Ok(Some(Bytes::from(v))),
             Ok(None) => Ok(None),
             Err(e) => Err(GetError(From::from(e))),
         }

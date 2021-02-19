@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use clap::{load_yaml, App, AppSettings};
 use himalaya::proto::himalaya::himalaya_client::HimalayaClient;
 use himalaya::proto::himalaya::{GetRequest, PutRequest};
@@ -48,14 +49,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = HimalayaClient::connect(host).await?;
     match command {
         Operation::Read { key } => {
-            let request = tonic::Request::new(GetRequest { key: key.to_vec() });
+            let request = tonic::Request::new(GetRequest {
+                key: Bytes::copy_from_slice(key),
+            });
             let response = client.get(request).await?;
             println!("RESPONSE={:?}", response);
         }
         Operation::Write { key, value } => {
             let request = tonic::Request::new(PutRequest {
-                key: key.to_vec(),
-                value: value.to_vec(),
+                key: Bytes::copy_from_slice(key),
+                value: Bytes::copy_from_slice(value),
             });
 
             let response = client.put(request).await?;

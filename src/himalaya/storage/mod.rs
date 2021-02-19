@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use rocksbd::RocksDb;
 use std::fmt::Formatter;
 
@@ -14,7 +15,7 @@ impl PersistentStore {
         }
     }
 
-    pub fn get<K: AsRef<[u8]>>(&self, key: &K) -> Result<Option<Vec<u8>>, Error> {
+    pub fn get<K: AsRef<[u8]>>(&self, key: &K) -> Result<Option<Bytes>, Error> {
         match self {
             PersistentStore::RocksDb(r) => r.get(key.as_ref()),
         }
