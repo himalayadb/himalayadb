@@ -1,20 +1,22 @@
-use crate::node::metadata::MetadataProvider;
-use crate::node::topology::Topology;
-use crate::node::Node;
-use crate::proto::himalaya_internal::himalaya_internal_client::HimalayaInternalClient;
-use crate::proto::himalaya_internal::{DeleteRequest, GetRequest, PutRequest};
-use crate::storage::PersistentStore;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
+
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use tracing::field::debug;
 use tracing::Span;
+
+use crate::node::metadata::MetadataProvider;
+use crate::node::topology::Topology;
+use crate::node::Node;
+use crate::proto::himalaya_internal::himalaya_internal_client::HimalayaInternalClient;
+use crate::proto::himalaya_internal::{DeleteRequest, GetRequest, PutRequest};
+use crate::storage::PersistentStore;
 
 pub struct Coordinator<MetaProvider> {
     nodes: Vec<Node>,
@@ -170,7 +172,7 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         value: Vec<u8>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         let channel = Channel::from_shared(host)?.connect().await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_millis(1));
+        let timeout_channel = Timeout::new(channel, Duration::from_millis(100));
         let mut client = HimalayaInternalClient::new(timeout_channel);
 
         client
@@ -290,27 +292,26 @@ impl Future for ConsistencyChecker {
     type Output = Result<(), Box<dyn std::error::Error>>;
 
     #[tracing::instrument(name = "Consistency Check", skip(self))]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.get_mut();
-
-        match this.rx.poll_recv(cx) {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.rx.poll_recv(cx) {
             Poll::Ready(res) => {
                 match res {
-                    Some(Ok(_)) => this.replicated += 1,
-                    Some(Err(e)) => this.failed += 1,
+                    Some(Ok(_)) => self.replicated += 1,
+                    Some(Err(e)) => self.failed += 1,
                     None => return Poll::Ready(Ok(())),
                 };
 
-                if this.replicated == this.consistency {
-                    this.rx.close();
+                if self.replicated == self.consistency {
+                    self.rx.close();
                     return Poll::Ready(Ok(()));
                 }
 
-                if this.replicated + this.failed == this.total {
-                    this.rx.close();
+                if self.replicated + self.failed == self.total {
+                    self.rx.close();
                     return Poll::Ready(Err(Box::from("replication failed")));
                 }
 
+                cx.waker().wake_by_ref();
                 Poll::Pending
             }
             Poll::Pending => Poll::Pending,
