@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -297,7 +297,7 @@ impl Future for ConsistencyChecker {
             Poll::Ready(res) => {
                 match res {
                     Some(Ok(_)) => self.replicated += 1,
-                    Some(Err(e)) => self.failed += 1,
+                    Some(Err(_e)) => self.failed += 1,
                     None => return Poll::Ready(Ok(())),
                 };
 
