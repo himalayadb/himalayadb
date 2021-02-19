@@ -293,27 +293,27 @@ impl Future for ConsistencyChecker {
 
     #[tracing::instrument(name = "Consistency Check", skip(self))]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.rx.poll_recv(cx) {
-            Poll::Ready(res) => {
-                match res {
-                    Some(Ok(_)) => self.replicated += 1,
-                    Some(Err(_e)) => self.failed += 1,
-                    None => return Poll::Ready(Ok(())),
-                };
+        loop {
+            match self.rx.poll_recv(cx) {
+                Poll::Ready(res) => {
+                    match res {
+                        Some(Ok(_)) => self.replicated += 1,
+                        Some(Err(_e)) => self.failed += 1,
+                        None => return Poll::Ready(Ok(())),
+                    };
 
-                if self.replicated == self.consistency {
-                    self.rx.close();
-                    return Poll::Ready(Ok(()));
+                    if self.replicated == self.consistency {
+                        self.rx.close();
+                        return Poll::Ready(Ok(()));
+                    }
+
+                    if self.replicated + self.failed == self.total {
+                        self.rx.close();
+                        return Poll::Ready(Err(Box::from("replication failed")));
+                    }
                 }
-
-                if self.replicated + self.failed == self.total {
-                    self.rx.close();
-                    return Poll::Ready(Err(Box::from("replication failed")));
-                }
-
-                self.poll(cx)
+                Poll::Pending => return Poll::Pending,
             }
-            Poll::Pending => Poll::Pending,
         }
     }
 }
