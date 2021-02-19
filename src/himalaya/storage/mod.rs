@@ -9,9 +9,9 @@ pub enum PersistentStore {
 }
 
 impl PersistentStore {
-    pub fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: &K, value: &V) -> Result<(), Error> {
+    pub fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: &K, value: &V, ts: i64) -> Result<(), Error> {
         match self {
-            PersistentStore::RocksDb(r) => r.put(key.as_ref(), value.as_ref()),
+            PersistentStore::RocksDb(r) => r.put(key.as_ref(), value.as_ref(), ts),
         }
     }
 

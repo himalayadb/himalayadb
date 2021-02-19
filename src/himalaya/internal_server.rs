@@ -9,6 +9,7 @@ use crate::Key;
 use bytes::Bytes;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
+use chrono::Utc;
 
 pub struct InternalHimalayaServer<MetaProvider> {
     coordinator: Arc<Coordinator<MetaProvider>>,
@@ -42,7 +43,7 @@ impl<MetaProvider: MetadataProvider + Send + Sync + 'static> HimalayaInternal
             Status::invalid_argument(e)
         })?;
 
-        self.storage.put(&key, &put.value).map_err(|e| {
+        self.storage.put(&key, &put.value, Utc::now().timestamp_millis()).map_err(|e| {
             tracing::error!(error = %e, "failed to store value");
             Status::internal(e)
         })?;

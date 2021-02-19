@@ -36,6 +36,7 @@ murmur3 = "0.5.1"
 clap = { version = "3.0.0-beta.2", features = ["yaml"] }
 tower = "0.4.5"
 bytes = "1.0.1"
+chrono = "0.4"
 
 [build-dependencies]
 tonic-build = "0.4.0"

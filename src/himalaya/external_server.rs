@@ -10,6 +10,7 @@ use crate::Key;
 use bytes::Bytes;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
+use chrono::Utc;
 
 pub struct HimalayaServer<MetaProvider> {
     coordinator: Arc<Coordinator<MetaProvider>>,
@@ -73,7 +74,7 @@ impl<MetaProvider: MetadataProvider + Send + Sync + 'static> Himalaya
             Status::invalid_argument(e)
         })?;
 
-        match self.coordinator.put(key.0, put.value, &self.storage).await {
+        match self.coordinator.put(key.0, put.value, Utc::now().timestamp_millis(), &self.storage).await {
             Ok(_) => Ok(Response::new(PutResponse {})),
             Err(e) => {
                 tracing::error!(error = %e, "put failed");
