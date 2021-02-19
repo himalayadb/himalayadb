@@ -311,8 +311,7 @@ impl Future for ConsistencyChecker {
                     return Poll::Ready(Err(Box::from("replication failed")));
                 }
 
-                cx.waker().wake_by_ref();
-                Poll::Pending
+                self.poll(cx)
             }
             Poll::Pending => Poll::Pending,
         }
