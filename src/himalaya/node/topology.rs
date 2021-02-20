@@ -73,20 +73,17 @@ impl<Provider: MetadataProvider> Topology<Provider> {
         let num_nodes = nodes.len();
         assert!(num_replicas < num_nodes);
 
-        let mut found = num_nodes;
-        for (i, x) in nodes.iter().enumerate() {
-            if token > x.metadata.token {
-                continue;
+        let found = nodes.binary_search_by(|x| x.metadata.token.cmp(&token));
+        let coordinator = match found {
+            Ok(index) => index,
+            Err(index) => {
+                if index == num_nodes {
+                    0 // need to insert at the end, so wrap around
+                } else {
+                    index
+                }
             }
-            found = i;
-            break;
-        }
-
-        let mut coordinator = found;
-        // did not find coordinator
-        if coordinator == num_nodes {
-            coordinator = 0;
-        }
+        };
 
         let replica_start = coordinator + 1;
         let mut replica_nodes = Vec::new();
