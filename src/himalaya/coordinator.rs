@@ -18,6 +18,9 @@ use crate::node::Node;
 use crate::proto::himalaya_internal::himalaya_internal_client::HimalayaInternalClient;
 use crate::proto::himalaya_internal::{DeleteRequest, GetRequest, PutRequest};
 use crate::storage::PersistentStore;
+
+use chrono::Utc;
+
 use bytes::Bytes;
 use std::str::FromStr;
 use tonic::codegen::http::uri::Authority;
@@ -97,6 +100,7 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         &self,
         key: Bytes,
         value: Bytes,
+        ts: i64,
         storage: &PersistentStore,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some((coordinator, replicas)) = self
@@ -108,7 +112,7 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
 
             return if self.nodes.contains(&coordinator) {
                 tracing::info!("coordinator processing put and replicating data");
-                storage.put(&key, &value)?;
+                storage.put(&key, &value, ts)?;
                 let replicas = replicas.iter().map(|r| r.metadata.host.clone()).collect();
                 self.replicate_data(&key, &value, &replicas).await
             } else {
