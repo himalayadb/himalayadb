@@ -62,7 +62,7 @@ impl RocksClient {
 
     pub(crate) fn get(&self, key: &[u8]) -> Result<Option<Bytes>, Error> {
         match self.rocks.get(key) {
-            Ok(Some(v)) => Ok(Some(Bytes::from(v[8..].to_vec()))),
+            Ok(Some(v)) => Ok(Some(Bytes::copy_from_slice(&v[8..]))),
             Ok(None) => Ok(None),
             Err(e) => Err(GetError(From::from(e))),
         }
