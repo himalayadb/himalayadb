@@ -308,7 +308,10 @@ impl Future for ConsistencyChecker {
                 Poll::Ready(res) => {
                     match res {
                         Some(Ok(_)) => self.replicated += 1,
-                        Some(Err(_e)) => self.failed += 1,
+                        Some(Err(e)) => {
+                            tracing::warn!(error = %e, "replication failed to node");
+                            self.failed += 1
+                        }
                         None => return Poll::Ready(Ok(())),
                     };
 

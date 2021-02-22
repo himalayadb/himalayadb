@@ -1,6 +1,6 @@
 use crate::configuration::Settings;
 use crate::coordinator::Coordinator;
-use crate::node::metadata::MetadataProvider;
+use crate::node::metadata::{MetadataProvider, NodeMetadata};
 use crate::node::partitioner::{Murmur3, Partitioner};
 use crate::node::topology::Topology;
 use crate::node::Node;
@@ -35,10 +35,18 @@ impl<MetaProvider: MetadataProvider + Send + Sync + 'static> Server<MetaProvider
         <MetaProvider as MetadataProvider>::MetaWatcher: Send,
     {
         let addr = format!("{}:{}", configuration.bind_address, configuration.bind_port);
-        tracing::info!(%addr, "Starting server.");
+        let listener = TcpListener::bind(addr).await?;
+        let local_addr = listener.local_addr()?;
+        let port = local_addr.port();
+
+        tracing::info!(addr = %local_addr, "Starting server.");
         tracing::info!(%configuration.replicas, "Setting replica count.");
 
-        let node = Node::new(configuration.metadata);
+        let node = Node::new(NodeMetadata {
+            identifier: configuration.identifier,
+            token: configuration.token,
+            host: local_addr.to_string(),
+        });
 
         provider.node_register(&node.metadata).await?;
 
@@ -73,9 +81,6 @@ impl<MetaProvider: MetadataProvider + Send + Sync + 'static> Server<MetaProvider
         let storage = Arc::new(PersistentStore::RocksDb(RocksClient::create(
             configuration.rocks.path,
         )?));
-
-        let listener = TcpListener::bind(addr).await?;
-        let port = listener.local_addr().unwrap().port();
 
         Ok(Server {
             port,

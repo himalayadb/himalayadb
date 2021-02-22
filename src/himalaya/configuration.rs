@@ -1,4 +1,3 @@
-use crate::node::metadata::NodeMetadata;
 use clap::{load_yaml, App, AppSettings};
 
 pub struct Settings {
@@ -6,7 +5,8 @@ pub struct Settings {
     pub bind_port: u32,
     pub consistency: usize,
     pub replicas: usize,
-    pub metadata: NodeMetadata,
+    pub token: i64,
+    pub identifier: String,
 
     pub rocks: RocksDbSettings,
     pub etcd: EtcdSettings,
@@ -66,11 +66,8 @@ pub fn get_configuration() -> Result<Settings, Box<dyn std::error::Error>> {
         bind_address,
         bind_port,
         consistency,
-        metadata: NodeMetadata {
-            identifier: identifier.to_owned(),
-            token,
-            host: format!("[::1]:{}", bind_port),
-        },
+        identifier: identifier.to_owned(),
+        token,
         replicas,
         rocks: RocksDbSettings {
             path: rocksdb_path.to_owned(),

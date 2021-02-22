@@ -1,12 +1,22 @@
 use claim::{assert_ok, assert_some};
 use futures_util::future::FutureExt;
 use himalaya::configuration::{EtcdSettings, RocksDbSettings, Settings};
-use himalaya::node::metadata::{EtcdMetadataProvider, EtcdMetadataProviderConfig, NodeMetadata};
+use himalaya::node::metadata::{EtcdMetadataProvider, EtcdMetadataProviderConfig};
 use himalaya::server::server::Server;
+use himalaya::telemetry::{get_subscriber, init_subscriber};
 use tempfile::tempdir;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::Sender;
 use uuid::Uuid;
+
+// Ensure that the `tracing` stack is only initialised once using `lazy_static`
+lazy_static::lazy_static! {
+    static ref TRACING: () = {
+        let filter = if std::env::var("TEST_LOG").is_ok() { "debug" } else { "" };
+        let subscriber = get_subscriber("test", filter);
+        init_subscriber(subscriber);
+    };
+}
 
 pub struct TestServer {
     pub port: u16,
@@ -19,6 +29,7 @@ pub async fn server<S>(
     identifier: S,
     consistency: usize,
     replicas: usize,
+    prefix: Option<String>,
 ) -> Result<TestServer, Box<dyn std::error::Error>>
 where
     S: Into<String>,
@@ -32,11 +43,8 @@ where
         bind_port: 0,
         consistency,
         replicas,
-        metadata: NodeMetadata {
-            identifier: identifier.into(),
-            token,
-            host: "127.0.0.1".to_owned(),
-        },
+        identifier: identifier.into(),
+        token,
         rocks: RocksDbSettings {
             path: path.unwrap().to_owned(),
         },
@@ -49,13 +57,14 @@ where
         },
     };
 
-    server_with_settings(configuration).await
+    server_with_settings(configuration, prefix).await
 }
 
 pub async fn server_with_settings(
     configuration: Settings,
+    prefix: Option<String>,
 ) -> Result<TestServer, Box<dyn std::error::Error>> {
-    let (provider, _) = etcd_provider(None)
+    let (provider, _) = etcd_provider(prefix)
         .await
         .expect("Failed to create etcd provider.");
 

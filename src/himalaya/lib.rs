@@ -1,5 +1,4 @@
 #![feature(test)]
-
 extern crate test;
 
 use bytes::Bytes;
@@ -12,6 +11,7 @@ pub mod node;
 pub mod proto;
 pub mod server;
 pub mod storage;
+pub mod telemetry;
 
 #[derive(Debug)]
 pub struct Key(Bytes);
