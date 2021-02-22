@@ -169,13 +169,35 @@ impl<Provider: MetadataProvider> Topology<Provider> {
 }
 
 #[cfg(test)]
-mod test {
-    use std::borrow::Borrow;
-
+mod tests {
     use super::*;
-    use crate::node::metadata::{EtcdMetadataProvider, EtcdMetadataProviderConfig, NodeMetadata};
-    use crate::node::partitioner::Murmur3;
-    use tokio::sync::oneshot;
+    use crate::node::metadata::{EtcdMetadataProvider, NodeMetadata};
+    use test::Bencher;
+
+    fn test_nodes() -> Vec<Arc<Node>> {
+        let mut nodes = Vec::new();
+        for i in vec![0, 5, 10, 15, 23] {
+            nodes.push(Arc::new(Node::new(NodeMetadata {
+                identifier: "test".to_string(),
+                token: i,
+                host: "127.0.0.1:50051".to_owned(),
+            })));
+        }
+
+        nodes
+    }
+
+    #[bench]
+    fn bench_find_coordinator(b: &mut Bencher) {
+        let nodes = test_nodes();
+
+        b.iter(|| {
+            let (coordinator, replicas) =
+                Topology::<EtcdMetadataProvider>::get_coordinator_and_replicas(1, 4, &nodes);
+
+            coordinator
+        });
+    }
 
     #[test]
     fn test_find_coordinator() {
@@ -187,14 +209,7 @@ mod test {
             (26, 3, 0, vec![5, 10, 15]),
         ];
 
-        let mut nodes = Vec::new();
-        for i in vec![0, 5, 10, 15, 23] {
-            nodes.push(Arc::new(Node::new(NodeMetadata {
-                identifier: "test".to_string(),
-                token: i,
-                host: "127.0.0.1:50051".to_owned(),
-            })));
-        }
+        let nodes = test_nodes();
 
         for (token, replicas, expected_coordinator, expected_replica_ids) in tests {
             let (coordinator, replicas) =
@@ -217,113 +232,6 @@ mod test {
                     .map(|x| x.metadata.token)
                     .collect::<Vec<i64>>()
             );
-        }
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_can_find_coordinator() {
-        let provider = EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
-            hosts: vec!["localhost:2379".to_owned()],
-        })
-        .await
-        .expect("failed to create etcd provider");
-
-        let partitioner = Partitioner::Murmur3(Murmur3 {});
-        let existing_nodes = provider
-            .node_list_all()
-            .await
-            .expect("failed to list all nodes");
-
-        let topology = Topology::new(
-            existing_nodes
-                .into_iter()
-                .map(|x| (x.identifier.clone(), Arc::new(Node::new(x))))
-                .collect(),
-            provider,
-            partitioner,
-        );
-        let (tx, rx) = oneshot::channel();
-
-        tokio::spawn(async move {
-            let provider = Box::new(
-                EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
-                    hosts: vec!["localhost:2379".to_owned()],
-                })
-                .await
-                .expect("failed to create etcd provider"),
-            );
-
-            let _registration = provider
-                .node_register(&NodeMetadata {
-                    host: "test".to_string(),
-                    token: 1,
-                    identifier: format!("node_{:?}", 1),
-                })
-                .await
-                .expect("failed to obtain registration");
-            tx.send(()).expect("failed to send shutdown");
-        });
-
-        topology.start(rx).await.expect("node failed");
-
-        let (k, _) = ("hello", "world");
-        let _ = topology
-            .find_coordinator_and_replicas(k.as_bytes(), 0)
-            .expect("could not find coordinator");
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_can_populate_topology() {
-        let provider = EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
-            hosts: vec!["localhost:2379".to_owned()],
-        })
-        .await
-        .expect("failed to create etcd provider");
-
-        let partitioner = Partitioner::Murmur3(Murmur3 {});
-
-        let topology = Topology::new(HashMap::new(), provider, partitioner);
-
-        let (tx, rx) = oneshot::channel();
-        tokio::spawn(async move {
-            let provider = Box::new(
-                EtcdMetadataProvider::new(EtcdMetadataProviderConfig {
-                    hosts: vec!["localhost:2379".to_owned()],
-                })
-                .await
-                .expect("failed to create etcd provider"),
-            );
-
-            for n in 1..10 {
-                let _registration = provider
-                    .node_register(&NodeMetadata {
-                        host: "test".to_string(),
-
-                        token: n,
-                        identifier: format!("node_{:?}", n),
-                    })
-                    .await
-                    .expect("failed to obtain registration");
-            }
-            tx.send(()).expect("failed to send shutdown");
-        });
-
-        topology.start(rx).await.expect("node failed");
-
-        for token in 1..10 {
-            let identifier = format!("node_{:?}", token);
-
-            let expected = topology
-                .get_node(&identifier)
-                .expect(&format!("{:?} not found", identifier));
-            assert_eq!(
-                &Node::new(NodeMetadata {
-                    host: "test".to_string(),
-                    identifier,
-                    token
-                }),
-                expected.borrow()
-            )
         }
     }
 }

@@ -1,12 +1,16 @@
+#![feature(test)]
+
+extern crate test;
+
 use bytes::Bytes;
 use tracing::field::debug;
 use tracing::Span;
 
+pub mod configuration;
 pub mod coordinator;
-pub mod external_server;
-pub mod internal_server;
 pub mod node;
 pub mod proto;
+pub mod server;
 pub mod storage;
 
 #[derive(Debug)]

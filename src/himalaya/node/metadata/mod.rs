@@ -1,13 +1,11 @@
+use crate::proto::himalaya_internal::NodeMetadata as ProtoNodeMetadata;
 use async_trait::async_trait;
+use std::cmp::Ordering;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio_stream::Stream;
-
 pub mod etcd;
 pub use etcd::*;
-
-use crate::proto::himalaya_internal::NodeMetadata as ProtoNodeMetadata;
-use std::cmp::Ordering;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeMetadata {

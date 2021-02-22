@@ -1,15 +1,20 @@
+use crate::storage::rocksbd::RocksClient;
 use bytes::Bytes;
-use rocksbd::RocksDb;
 use std::fmt::Formatter;
 
 pub mod rocksbd;
 
 pub enum PersistentStore {
-    RocksDb(RocksDb),
+    RocksDb(RocksClient),
 }
 
 impl PersistentStore {
-    pub fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: &K, value: &V, ts: i64) -> Result<(), Error> {
+    pub fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+        &self,
+        key: &K,
+        value: &V,
+        ts: i64,
+    ) -> Result<(), Error> {
         match self {
             PersistentStore::RocksDb(r) => r.put(key.as_ref(), value.as_ref(), ts),
         }

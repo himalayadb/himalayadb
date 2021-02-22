@@ -19,8 +19,6 @@ use crate::proto::himalaya_internal::himalaya_internal_client::HimalayaInternalC
 use crate::proto::himalaya_internal::{DeleteRequest, GetRequest, PutRequest};
 use crate::storage::PersistentStore;
 
-use chrono::Utc;
-
 use bytes::Bytes;
 use std::str::FromStr;
 use tonic::codegen::http::uri::Authority;

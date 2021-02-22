@@ -4,7 +4,7 @@ pub enum Partitioner {
     Murmur3(Murmur3),
 }
 
-pub struct Murmur3 {}
+pub struct Murmur3;
 
 impl Murmur3 {
     const SEED: u32 = 432144324;

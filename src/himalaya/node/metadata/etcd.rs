@@ -1,12 +1,10 @@
 use crate::node::metadata::{
     MetadataProvider, NodeMetadata, NodeWatchEvent, NodeWatcher, Subscription,
 };
-use prost::Message;
-
 use crate::proto::himalaya_internal::NodeMetadata as ProtoNodeMetadata;
-
 use async_trait::async_trait;
 use etcd_client::{Client, EventType, GetOptions, PutOptions, WatchOptions, WatchStream, Watcher};
+use prost::Message;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::time::{self, Duration};
@@ -17,21 +15,30 @@ use tokio_stream::StreamExt;
 #[derive(Clone)]
 pub struct EtcdMetadataProvider {
     client: Client,
+    prefix: String,
+    lease_ttl: i64,
+    ttl_refresh_interval: u64,
 }
 
 pub struct EtcdMetadataProviderConfig {
     pub hosts: Vec<String>,
+    pub prefix: String,
+    pub lease_ttl: i64,
+    pub ttl_refresh_interval: u64,
 }
 
 impl EtcdMetadataProvider {
-    const LEASE_TTL: u64 = 10;
-
     pub async fn new(
         config: EtcdMetadataProviderConfig,
     ) -> Result<EtcdMetadataProvider, Box<dyn std::error::Error>> {
         let client = Client::connect(config.hosts, None).await?;
 
-        Ok(EtcdMetadataProvider { client })
+        Ok(EtcdMetadataProvider {
+            client,
+            prefix: config.prefix,
+            lease_ttl: config.lease_ttl,
+            ttl_refresh_interval: config.ttl_refresh_interval,
+        })
     }
 }
 
@@ -41,9 +48,7 @@ impl MetadataProvider for EtcdMetadataProvider {
 
     async fn node_register(&self, r: &NodeMetadata) -> Result<(), Box<dyn std::error::Error>> {
         let mut client = self.client.clone();
-        let lease_grant = client
-            .lease_grant(EtcdMetadataProvider::LEASE_TTL as i64, None)
-            .await?;
+        let lease_grant = client.lease_grant(self.lease_ttl, None).await?;
 
         let nm = ProtoNodeMetadata {
             identifier: r.identifier.clone(),
@@ -54,23 +59,21 @@ impl MetadataProvider for EtcdMetadataProvider {
         nm.encode(&mut buf)?;
 
         let lease_id = lease_grant.id();
-        let _worker = client
+        client
             .clone()
             .put(
-                format!("members/{}", r.identifier),
+                format!("{}/{}", self.prefix, r.identifier),
                 buf,
                 Some(PutOptions::new().with_lease(lease_id)),
             )
             .await?;
 
+        let interval = Duration::from_millis(self.ttl_refresh_interval);
         let keep_alive_task = async move {
-            let mut interval = IntervalStream::new(time::interval(Duration::from_secs(
-                EtcdMetadataProvider::LEASE_TTL - 5,
-            )));
-
-            while let Some(_i) = interval.next().await {
+            let mut interval = IntervalStream::new(time::interval(interval));
+            while let Some(_) = interval.next().await {
                 if client.lease_keep_alive(lease_id).await.is_err() {
-                    println!("failed to send keep alive");
+                    tracing::error!("failed to send keep alive");
                     return;
                 }
             }
@@ -84,7 +87,10 @@ impl MetadataProvider for EtcdMetadataProvider {
         let (watcher, stream) = self
             .client
             .clone()
-            .watch("members/", Some(WatchOptions::new().with_prefix()))
+            .watch(
+                format!("{}/", self.prefix),
+                Some(WatchOptions::new().with_prefix()),
+            )
             .await?;
 
         Ok(Subscription {
@@ -95,7 +101,10 @@ impl MetadataProvider for EtcdMetadataProvider {
     async fn node_list_all(&self) -> Result<Vec<NodeMetadata>, Box<dyn std::error::Error>> {
         self.client
             .clone()
-            .get("members/", Some(GetOptions::new().with_prefix()))
+            .get(
+                format!("{}/", self.prefix),
+                Some(GetOptions::new().with_prefix()),
+            )
             .await?
             .kvs()
             .iter()
