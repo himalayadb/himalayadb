@@ -1,4 +1,4 @@
-use crate::node::metadata::etcd::{etcd_provider, etcd_provider_with_prefix};
+use crate::node::metadata::etcd::etcd_provider;
 use himalaya::node::metadata::{MetadataProvider, NodeMetadata};
 use himalaya::node::partitioner::{Murmur3, Partitioner};
 use himalaya::node::topology::Topology;
@@ -10,7 +10,7 @@ use tokio::sync::oneshot;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_can_find_coordinator() {
-    let (provider, prefix) = etcd_provider()
+    let (provider, prefix) = etcd_provider(None)
         .await
         .expect("failed to create etcd provider");
 
@@ -31,7 +31,7 @@ async fn test_can_find_coordinator() {
 
     let (tx, rx) = oneshot::channel();
     tokio::spawn(async move {
-        let provider = etcd_provider_with_prefix(prefix)
+        let (provider, _) = etcd_provider(Some(prefix))
             .await
             .expect("failed to create etcd provider");
 
@@ -56,7 +56,7 @@ async fn test_can_find_coordinator() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_can_populate_topology() {
-    let (provider, prefix) = etcd_provider()
+    let (provider, prefix) = etcd_provider(None)
         .await
         .expect("failed to create etcd provider");
 
@@ -65,12 +65,12 @@ async fn test_can_populate_topology() {
 
     let (tx, rx) = oneshot::channel();
     tokio::spawn(async move {
-        let provider = etcd_provider_with_prefix(prefix)
+        let (provider, _) = etcd_provider(Some(prefix))
             .await
             .expect("failed to create etcd provider");
 
         for n in 1..10 {
-            let _registration = provider
+            provider
                 .node_register(&NodeMetadata {
                     host: "test".to_string(),
                     token: n,

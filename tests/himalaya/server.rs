@@ -65,7 +65,7 @@ where
 async fn server_with_settings(
     configuration: Settings,
 ) -> Result<TestServer, Box<dyn std::error::Error>> {
-    let (provider, _) = etcd_provider()
+    let (provider, _) = etcd_provider(None)
         .await
         .expect("Failed to create etcd provider.");
 

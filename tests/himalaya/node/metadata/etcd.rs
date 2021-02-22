@@ -7,8 +7,14 @@ use std::sync::Arc;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
-pub async fn etcd_provider() -> Result<(EtcdMetadataProvider, String), Box<dyn std::error::Error>> {
-    let prefix = Uuid::new_v4().to_string();
+pub async fn etcd_provider(
+    prefix: Option<String>,
+) -> Result<(EtcdMetadataProvider, String), Box<dyn std::error::Error>> {
+    let prefix = match prefix {
+        Some(p) => p,
+        None => Uuid::new_v4().to_string(),
+    };
+
     let etcd_config = EtcdMetadataProviderConfig {
         hosts: vec!["localhost:2379".to_owned()],
         prefix: prefix.clone(),
@@ -17,19 +23,6 @@ pub async fn etcd_provider() -> Result<(EtcdMetadataProvider, String), Box<dyn s
     };
     let provider = etcd_provider_with_settings(etcd_config).await?;
     Ok((provider, prefix))
-}
-
-pub async fn etcd_provider_with_prefix(
-    prefix: String,
-) -> Result<EtcdMetadataProvider, Box<dyn std::error::Error>> {
-    let etcd_config = EtcdMetadataProviderConfig {
-        hosts: vec!["localhost:2379".to_owned()],
-        prefix,
-        lease_ttl: 5,
-        ttl_refresh_interval: 3000,
-    };
-    let provider = etcd_provider_with_settings(etcd_config).await?;
-    Ok(provider)
 }
 
 pub async fn etcd_provider_with_settings(
@@ -41,7 +34,7 @@ pub async fn etcd_provider_with_settings(
 
 #[tokio::test]
 async fn register_nodes() {
-    let (provider, _) = etcd_provider()
+    let (provider, _) = etcd_provider(None)
         .await
         .expect("Failed to create etcd provider");
 
@@ -73,7 +66,7 @@ async fn register_nodes() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_watching_joined_nodes() {
-    let (provider, _) = etcd_provider()
+    let (provider, _) = etcd_provider(None)
         .await
         .expect("Failed to create etcd provider");
 
