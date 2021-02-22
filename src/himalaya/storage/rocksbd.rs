@@ -99,16 +99,12 @@ mod tests {
             .put("key".as_bytes(), "value1".as_bytes(), 1)
             .expect("failed to put value");
 
-        rocksdb
-            .put("key".as_bytes(), "test".as_bytes(), 113123123123)
-            .expect("failed to put value");
-
         let val = rocksdb
             .get("key".as_bytes())
             .expect("expected to receive key")
             .expect("expected to receive value");
 
-        assert_eq!(val, "test".as_bytes());
+        assert_eq!(val, "value3".as_bytes());
     }
 
     #[bench]
