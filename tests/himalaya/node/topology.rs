@@ -1,12 +1,11 @@
 use crate::node::metadata::etcd::{etcd_provider, etcd_provider_with_prefix};
-use himalaya::node::metadata::{EtcdMetadataProvider, MetadataProvider, NodeMetadata};
+use himalaya::node::metadata::{MetadataProvider, NodeMetadata};
 use himalaya::node::partitioner::{Murmur3, Partitioner};
 use himalaya::node::topology::Topology;
 use himalaya::node::Node;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
-use test::Bencher;
 use tokio::sync::oneshot;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -101,10 +100,3 @@ async fn test_can_populate_topology() {
         )
     }
 }
-//
-// #[bench]
-// fn bench_find_coordinator(b: &mut Bencher) {
-//     b.iter(|| {
-//         Topology::<EtcdMetadataProvider>::get_coordinator_and_replicas(replicas, token, &nodes);
-//     });
-// }

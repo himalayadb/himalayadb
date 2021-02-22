@@ -1,8 +1,10 @@
 use crate::storage::Error;
 use crate::storage::Error::{Configuration, DeleteError, GetError, PutError};
+use bytes::BufMut;
 use bytes::Bytes;
 use rocksdb::{MergeOperands, Options, DB};
 use std::cmp::Ordering;
+use std::mem;
 use std::path::Path;
 
 pub struct RocksClient {
@@ -41,15 +43,17 @@ impl RocksClient {
         Ok(Self { rocks: db })
     }
 
+    #[inline]
+    fn wrap_value(value: &[u8], ts: i64) -> Vec<u8> {
+        let mut wrapped_value = Vec::with_capacity(value.len() + mem::size_of::<i64>());
+        wrapped_value.put_i64(ts);
+        wrapped_value.put_slice(value);
+
+        wrapped_value
+    }
+
     pub(crate) fn put(&self, key: &[u8], value: &[u8], ts: i64) -> Result<(), Error> {
-        let mut wrapped_value = Vec::with_capacity(value.len() + 8);
-        let ts_bytes = ts.to_be_bytes();
-
-        wrapped_value.append(&mut ts_bytes.to_vec());
-        for x in value {
-            wrapped_value.push(*x)
-        }
-
+        let wrapped_value = Self::wrap_value(value, ts);
         self.rocks
             .merge(key, wrapped_value)
             .map_err(|e| PutError(From::from(e)))?;
@@ -71,48 +75,50 @@ impl RocksClient {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use test::Bencher;
-//
-//     #[test]
-//     fn test_can_merge_values() {
-//         let rocksdb = RocksDb::create("/tmp/rocks_test").expect("failed to create rocksdb");
-//
-//         rocksdb
-//             .put("key".as_bytes(), "value3".as_bytes(), 3)
-//             .expect("failed to put value");
-//         rocksdb
-//             .put("key".as_bytes(), "value2".as_bytes(), 2)
-//             .expect("failed to put value");
-//         rocksdb
-//             .put("key".as_bytes(), "value1".as_bytes(), 1)
-//             .expect("failed to put value");
-//
-//         rocksdb
-//             .put("key".as_bytes(), "test".as_bytes(), 113123123123)
-//             .expect("failed to put value");
-//
-//         let val = rocksdb
-//             .get("key".as_bytes())
-//             .expect("expected to receive key")
-//             .expect("expected to receive value");
-//
-//         assert_eq!(val, "test".as_bytes());
-//     }
-//
-//     #[bench]
-//     fn bench_value(b: &mut Bencher) {
-//         b.iter(|| {
-//             let mut wrapped_value = Vec::with_capacity(value.len() + 8);
-//             let ts_bytes = ts.to_be_bytes();
-//
-//             wrapped_value.append(&mut ts_bytes.to_vec());
-//             for x in value {
-//                 wrapped_value.push(*x)
-//             }
-//             wrapped_value
-//         });
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use claim::assert_ok;
+    use tempfile::tempdir;
+    use test::Bencher;
+
+    #[test]
+    fn test_can_merge_values() {
+        let temp_res = tempdir();
+        assert_ok!(&temp_res);
+        let dir = temp_res.unwrap();
+        let rocksdb = RocksClient::create(dir.path()).expect("failed to create rocksdb");
+
+        rocksdb
+            .put("key".as_bytes(), "value3".as_bytes(), 3)
+            .expect("failed to put value");
+        rocksdb
+            .put("key".as_bytes(), "value2".as_bytes(), 2)
+            .expect("failed to put value");
+        rocksdb
+            .put("key".as_bytes(), "value1".as_bytes(), 1)
+            .expect("failed to put value");
+
+        rocksdb
+            .put("key".as_bytes(), "test".as_bytes(), 113123123123)
+            .expect("failed to put value");
+
+        let val = rocksdb
+            .get("key".as_bytes())
+            .expect("expected to receive key")
+            .expect("expected to receive value");
+
+        assert_eq!(val, "test".as_bytes());
+    }
+
+    #[bench]
+    fn bench_value_new(b: &mut Bencher) {
+        let ts = 123123i64;
+        let value = "asdfasdfasdf".as_bytes();
+        b.iter(|| {
+            let wrapped_value = RocksClient::wrap_value(value, ts);
+
+            wrapped_value
+        });
+    }
+}
