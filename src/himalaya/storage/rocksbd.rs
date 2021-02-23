@@ -79,6 +79,7 @@ impl RocksClient {
 mod tests {
     use super::*;
     use claim::assert_ok;
+    use fake::{Fake, Faker};
     use tempfile::tempdir;
     use test::Bencher;
 
@@ -89,30 +90,35 @@ mod tests {
         let dir = temp_res.unwrap();
         let rocksdb = RocksClient::create(dir.path()).expect("failed to create rocksdb");
 
+        let key = Bytes::from(Faker.fake::<String>());
+        let value = Bytes::from(Faker.fake::<String>());
         rocksdb
-            .put("key".as_bytes(), "value3".as_bytes(), 3)
+            .put(&key.clone(), &value.clone(), 87)
             .expect("failed to put value");
         rocksdb
-            .put("key".as_bytes(), "value2".as_bytes(), 2)
+            .put(&key.clone(), Faker.fake::<String>().as_bytes(), 21)
             .expect("failed to put value");
         rocksdb
-            .put("key".as_bytes(), "value1".as_bytes(), 1)
+            .put(&key.clone(), Faker.fake::<String>().as_bytes(), 34)
+            .expect("failed to put value");
+        rocksdb
+            .put(&key.clone(), Faker.fake::<String>().as_bytes(), 8)
             .expect("failed to put value");
 
         let val = rocksdb
-            .get("key".as_bytes())
+            .get(&key.clone())
             .expect("expected to receive key")
             .expect("expected to receive value");
 
-        assert_eq!(val, "value3".as_bytes());
+        assert_eq!(val, &value);
     }
 
     #[bench]
     fn bench_value_new(b: &mut Bencher) {
-        let ts = 123123i64;
-        let value = "asdfasdfasdf".as_bytes();
+        let ts = Faker.fake::<i64>();
+        let value = Faker.fake::<String>();
         b.iter(|| {
-            let wrapped_value = RocksClient::wrap_value(value, ts);
+            let wrapped_value = RocksClient::wrap_value(value.as_bytes(), ts);
 
             wrapped_value
         });

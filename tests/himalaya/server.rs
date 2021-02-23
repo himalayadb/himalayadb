@@ -1,6 +1,7 @@
 use crate::helpers;
 use bytes::Bytes;
 use claim::assert_ok;
+use fake::{Fake, Faker};
 use himalaya::proto::himalaya::himalaya_client::HimalayaClient;
 use himalaya::proto::himalaya::{DeleteRequest, GetRequest, PutRequest};
 use uuid::Uuid;
@@ -15,8 +16,8 @@ async fn put_key() {
         .await
         .expect("Failed to create client");
 
-    let key = Bytes::copy_from_slice("test".as_bytes());
-    let value = Bytes::copy_from_slice("value".as_bytes());
+    let key = Bytes::copy_from_slice(Faker.fake::<String>().as_bytes());
+    let value = Bytes::copy_from_slice(Faker.fake::<String>().as_bytes());
 
     let put_request = tonic::Request::new(PutRequest {
         key: key.clone(),
@@ -43,8 +44,8 @@ async fn delete_key() {
         .await
         .expect("Failed to create client");
 
-    let key = Bytes::copy_from_slice("test".as_bytes());
-    let value = Bytes::copy_from_slice("value".as_bytes());
+    let key = Bytes::copy_from_slice(Faker.fake::<String>().as_bytes());
+    let value = Bytes::copy_from_slice(Faker.fake::<String>().as_bytes());
 
     let put_request = tonic::Request::new(PutRequest {
         key: key.clone(),
@@ -85,9 +86,18 @@ async fn replicate_keys() {
     ];
 
     let kvs = vec![
-        (Bytes::from("key_1"), Bytes::from("value_1")),
-        (Bytes::from("key_2"), Bytes::from("value_2")),
-        (Bytes::from("key_3"), Bytes::from("value_3")),
+        (
+            Bytes::from(Faker.fake::<String>()),
+            Bytes::from(Faker.fake::<String>()),
+        ),
+        (
+            Bytes::from(Faker.fake::<String>()),
+            Bytes::from(Faker.fake::<String>()),
+        ),
+        (
+            Bytes::from(Faker.fake::<String>()),
+            Bytes::from(Faker.fake::<String>()),
+        ),
     ];
 
     for (ix, h) in hosts.iter().cloned().enumerate() {
