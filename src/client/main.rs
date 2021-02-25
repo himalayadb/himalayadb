@@ -1,43 +1,70 @@
-mod himalaya {
-    tonic::include_proto!("himalaya");
+use bytes::Bytes;
+use clap::{load_yaml, App, AppSettings};
+use himalaya::proto::himalaya::himalaya_client::HimalayaClient;
+use himalaya::proto::himalaya::{GetRequest, PutRequest};
+
+enum Operation<'b> {
+    Read { key: &'b [u8] },
+    Write { key: &'b [u8], value: &'b [u8] },
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client =
-        himalaya::himalaya_client::HimalayaClient::connect("http://[::1]:50051").await?;
+    let yaml = load_yaml!("options.yaml");
+    let matches = App::from(yaml)
+        .setting(AppSettings::AllowNegativeNumbers)
+        .get_matches();
 
-    {
-        let request = tonic::Request::new(himalaya::PutRequest {
-            entry: Some(himalaya::Entry {
-                key: vec![0, 1, 2, 3],
-                value: vec![0, 1, 2, 3],
-            }),
-        });
+    let host = matches.value_of("host").expect("You must provide a host.");
+    let port = matches
+        .value_of("port")
+        .expect("You must provide a host.")
+        .parse::<usize>()
+        .unwrap();
 
-        let response = client.put(request).await?;
+    let command = if let Some(ref matches) = matches.subcommand_matches("read") {
+        Operation::Read {
+            key: matches
+                .value_of("key")
+                .expect("You must provide a key.")
+                .as_bytes(),
+        }
+    } else if let Some(ref matches) = matches.subcommand_matches("write") {
+        Operation::Write {
+            key: matches
+                .value_of("key")
+                .expect("You must provide a key.")
+                .as_bytes(),
+            value: matches
+                .value_of("value")
+                .expect("You must provide a value.")
+                .as_bytes(),
+        }
+    } else {
+        panic!("You must provide a command.");
+    };
 
-        println!("RESPONSE={:?}", response);
+    let host = format!("http://{}:{}", host, port);
+
+    let mut client = HimalayaClient::connect(host).await?;
+    match command {
+        Operation::Read { key } => {
+            let request = tonic::Request::new(GetRequest {
+                key: Bytes::copy_from_slice(key),
+            });
+            let response = client.get(request).await?;
+            println!("RESPONSE={:?}", response);
+        }
+        Operation::Write { key, value } => {
+            let request = tonic::Request::new(PutRequest {
+                key: Bytes::copy_from_slice(key),
+                value: Bytes::copy_from_slice(value),
+            });
+
+            let response = client.put(request).await?;
+            println!("RESPONSE={:?}", response);
+        }
     }
 
-    {
-        let request = tonic::Request::new(himalaya::GetRequest {
-            key: vec![0, 1, 2, 3],
-        });
-
-        let response = client.get(request).await?;
-
-        println!("RESPONSE={:?}", response);
-    }
-
-    {
-        let request = tonic::Request::new(himalaya::DeleteRequest {
-            key: vec![0, 1, 2, 3],
-        });
-
-        let response = client.delete(request).await?;
-
-        println!("RESPONSE={:?}", response);
-    }
     Ok(())
 }

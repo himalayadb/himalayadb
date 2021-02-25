@@ -12,12 +12,18 @@ path = "src/himalaya/main.rs"
 name = "himalaya-client"
 path = "src/client/main.rs"
 
+[lib]
+name = "himalaya"
+path = "src/himalaya/lib.rs"
+
 
 [dependencies]
 prost = "0.7.0"
 rocksdb = "0.15.0"
 tonic = "0.4.0"
-tokio = { version = "1.0", features = ["rt-multi-thread", "time", "fs", "macros", "net"] }
+futures-core = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false }
+tokio = { version = "1.0", features = ["rt-multi-thread", "time", "fs", "macros", "net", "signal"] }
 tokio-stream = { version =  "0.1", features = ["net"] }
 tracing = "0.1.16"
 tracing-subscriber = { version = "0.2", features = ["tracing-log"] }
@@ -26,7 +32,20 @@ tracing-futures = "0.2.4"
 tracing-log = "0.1.1"
 tracing-bunyan-formatter = "0.1.7"
 uuid = { version = "0.8.1", features = ["v4"] }
+etcd-client = "0.6"
+async-trait = "0.1.42"
+murmur3 = "0.5.1"
 clap = { version = "3.0.0-beta.2", features = ["yaml"] }
+tower = "0.4.5"
+bytes = "1.0.1"
+chrono = "0.4"
+
+[dev-dependencies]
+claim = "0.5.0"
+tempfile = "3.2.0"
+lazy_static = "1.4.0"
+fake = "~2.3.0"
 
 [build-dependencies]
 tonic-build = "0.4.0"
+prost-build = "0.7.0"

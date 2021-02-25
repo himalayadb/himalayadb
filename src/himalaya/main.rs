@@ -1,47 +1,32 @@
-use tonic::transport::Server;
-use tracing::subscriber::set_global_default;
-use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
-use tracing_log::LogTracer;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{EnvFilter, Registry};
-use uuid::Uuid;
-
-mod server;
+use futures_util::future::FutureExt;
+use himalaya::configuration::get_configuration;
+use himalaya::node::metadata::{EtcdMetadataProvider, EtcdMetadataProviderConfig};
+use himalaya::server::server::Server;
+use himalaya::telemetry::{get_subscriber, init_subscriber};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info".to_owned()));
+    let subscriber = get_subscriber("himalayadb", "info");
+    init_subscriber(subscriber);
 
-    let formatting_layer = BunyanFormattingLayer::new("himalayadb".to_owned(), std::io::stdout);
-    let subscriber = Registry::default()
-        .with(env_filter)
-        .with(JsonStorageLayer)
-        .with(formatting_layer);
-    LogTracer::init().expect("Failed to set log tracer");
+    let configuration = get_configuration().expect("Failed to parse configuration");
 
-    set_global_default(subscriber).expect("Failed to set subscriber");
+    let etcd_config = EtcdMetadataProviderConfig {
+        hosts: configuration.etcd.hosts(),
+        prefix: configuration.etcd.prefix.clone(),
+        lease_ttl: configuration.etcd.lease_ttl,
+        ttl_refresh_interval: configuration.etcd.ttl_refresh_interval,
+    };
 
-    let addr = "[::1]:50051".parse()?;
+    tracing::info!(
+        hosts = &debug(&etcd_config.hosts),
+        "Configuring etcd connection."
+    );
+    let provider = EtcdMetadataProvider::new(etcd_config).await?;
 
-    tracing::info!(%addr, "Starting server.");
-    let server = server::HimalayaServer::default();
-
-    Server::builder()
-        .trace_fn(|headers| {
-            let user_agent = headers
-                .get("User-Agent")
-                .map(|h| h.to_str().unwrap_or(""))
-                .unwrap_or("");
-            tracing::info_span!(
-            "Request",
-            user_agent = %user_agent,
-            request_id = %Uuid::new_v4(),
-            )
-        })
-        .add_service(server::HimalayaGRPCServer::new(server))
-        .serve(addr)
-        .await?;
+    let server = Server::build(configuration, provider).await?;
+    let signal = tokio::signal::ctrl_c().map(drop);
+    server.run(signal).await?;
 
     Ok(())
 }
