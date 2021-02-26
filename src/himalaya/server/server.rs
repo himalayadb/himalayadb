@@ -1,4 +1,5 @@
 use crate::configuration::Settings;
+use crate::conn::ConnManager;
 use crate::coordinator::Coordinator;
 use crate::node::metadata::{MetadataProvider, NodeMetadata};
 use crate::node::partitioner::{Murmur3, Partitioner};
@@ -75,6 +76,9 @@ impl<MetaProvider: MetadataProvider + Send + Sync + 'static> Server<MetaProvider
         let coordinator = Arc::new(Coordinator::new(
             vec![node],
             topology,
+            ConnManager::builder()
+                .timeout(configuration.request_timeout)
+                .build(),
             configuration.replicas,
             configuration.consistency,
         ));

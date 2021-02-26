@@ -48,3 +48,7 @@ args:
       about: Sets the etcd port
       required: true
       takes_value: true
+  - request_timeout:
+      long: request_timeout
+      about: Sets timeout for all internal grpc communication. Value must be in ms.
+      takes_value: true

@@ -1,4 +1,5 @@
 use clap::{load_yaml, App, AppSettings};
+use std::time::Duration;
 
 pub struct Settings {
     pub bind_address: String,
@@ -7,6 +8,7 @@ pub struct Settings {
     pub replicas: usize,
     pub token: i64,
     pub identifier: String,
+    pub request_timeout: Duration,
 
     pub rocks: RocksDbSettings,
     pub etcd: EtcdSettings,
@@ -41,6 +43,7 @@ pub fn get_configuration() -> Result<Settings, Box<dyn std::error::Error>> {
     let bind_port = matches.value_of_t("port").unwrap_or(50051u32);
     let consistency = matches.value_of_t("consistency").unwrap_or(1usize);
     let replicas = matches.value_of_t("replicas").unwrap_or(0usize);
+    let request_timeout = matches.value_of_t("request_timeout").unwrap_or(2000);
 
     let etcd_host = matches.value_of("etcd_host").unwrap_or("localhost");
     let etcd_port = matches.value_of_t("etcd_port").unwrap_or(2379u32);
@@ -69,6 +72,7 @@ pub fn get_configuration() -> Result<Settings, Box<dyn std::error::Error>> {
         identifier: identifier.to_owned(),
         token,
         replicas,
+        request_timeout: Duration::from_millis(request_timeout),
         rocks: RocksDbSettings {
             path: rocksdb_path.to_owned(),
         },

@@ -4,6 +4,7 @@ use himalaya::configuration::{EtcdSettings, RocksDbSettings, Settings};
 use himalaya::node::metadata::{EtcdMetadataProvider, EtcdMetadataProviderConfig};
 use himalaya::server::server::Server;
 use himalaya::telemetry::{get_subscriber, init_subscriber};
+use std::time::Duration;
 use tempfile::tempdir;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::Sender;
@@ -44,6 +45,7 @@ where
         consistency,
         replicas,
         identifier: identifier.into(),
+        request_timeout: Duration::from_millis(2000),
         token,
         rocks: RocksDbSettings {
             path: path.unwrap().to_owned(),

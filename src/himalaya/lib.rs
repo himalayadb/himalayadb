@@ -6,6 +6,7 @@ use tracing::field::debug;
 use tracing::Span;
 
 pub mod configuration;
+pub mod conn;
 pub mod coordinator;
 pub mod node;
 pub mod proto;

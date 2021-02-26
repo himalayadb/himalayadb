@@ -2,13 +2,10 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::Duration;
 
 use tokio::sync::mpsc;
-use tokio::time::timeout;
-use tonic::transport::{Channel, Uri};
+use tonic::transport::Uri;
 
-use tower::timeout::Timeout;
 use tracing::field::debug;
 use tracing::Span;
 
@@ -19,6 +16,7 @@ use crate::proto::himalaya_internal::himalaya_internal_client::HimalayaInternalC
 use crate::proto::himalaya_internal::{DeleteRequest, GetRequest, PutRequest};
 use crate::storage::PersistentStore;
 
+use crate::conn::ConnManager;
 use bytes::Bytes;
 use std::str::FromStr;
 use tonic::codegen::http::uri::Authority;
@@ -26,6 +24,7 @@ use tonic::codegen::http::uri::Authority;
 pub struct Coordinator<MetaProvider> {
     nodes: Vec<Node>,
     topology: Arc<Topology<MetaProvider>>,
+    conn: ConnManager,
     num_replicas: usize,
     consistency: usize,
 }
@@ -34,12 +33,14 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
     pub fn new(
         nodes: Vec<Node>,
         topology: Arc<Topology<MetaProvider>>,
+        conn: ConnManager,
         num_replicas: usize,
         consistency: usize,
     ) -> Self {
         Self {
             nodes,
             topology,
+            conn,
             num_replicas,
             consistency,
         }
@@ -115,11 +116,14 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
                 self.replicate_data(&key, &value, &replicas).await
             } else {
                 tracing::info!("forwarding put request to coordinator");
-                let mut client = HimalayaInternalClient::connect(format!(
-                    "http://{}",
-                    coordinator.metadata.host
-                ))
-                .await?;
+                let uri = Uri::builder()
+                    .scheme("http")
+                    .authority(Authority::from_str(&coordinator.metadata.host)?)
+                    .path_and_query("")
+                    .build()?;
+
+                let channel = self.conn.get(uri)?;
+                let mut client = HimalayaInternalClient::new(channel);
                 client
                     .put(PutRequest {
                         key,
@@ -170,8 +174,9 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         Ok(())
     }
 
-    #[tracing::instrument(name = "Replicating data to node", skip(value), err)]
+    #[tracing::instrument(name = "Replicating data to node", skip(value, conn), err)]
     async fn replicate_to_node(
+        conn: &ConnManager,
         host: String,
         key: Bytes,
         value: Bytes,
@@ -181,9 +186,8 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             .authority(Authority::from_str(&host)?)
             .path_and_query("")
             .build()?;
-        let channel = Channel::builder(uri).connect().await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_millis(100));
-        let mut client = HimalayaInternalClient::new(timeout_channel);
+        let channel = conn.get(uri)?;
+        let mut client = HimalayaInternalClient::new(channel);
 
         client
             .put(PutRequest {
@@ -213,9 +217,11 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             let v = value.clone();
             let tx = tx.clone();
             let host = replica.clone();
+            let conn = self.conn.clone();
 
             tokio::spawn(async move {
-                let result = Coordinator::<MetaProvider>::replicate_to_node(host, k, v).await;
+                let result =
+                    Coordinator::<MetaProvider>::replicate_to_node(&conn, host, k, v).await;
                 tx.send(result).await?;
                 Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
             });
@@ -234,8 +240,14 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
         for ref replica in replicas {
             let key = key.clone();
             let host = replica.metadata.host.clone();
+            let uri = Uri::builder()
+                .scheme("http")
+                .authority(Authority::from_str(&host)?)
+                .path_and_query("")
+                .build()?;
 
-            let mut client = HimalayaInternalClient::connect(format!("http://{}", host)).await?;
+            let channel = self.conn.get(uri)?;
+            let mut client = HimalayaInternalClient::new(channel);
             client.delete(DeleteRequest { key }).await?;
         }
 
@@ -254,22 +266,30 @@ impl<MetaProvider: MetadataProvider> Coordinator<MetaProvider> {
             let key = key.clone();
             let host = replica.clone();
             let tx = tx.clone();
+            let conn = self.conn.clone();
+
             tokio::spawn(async move {
-                let mut client =
-                    HimalayaInternalClient::connect(format!("http://{}", host)).await?;
+                let uri = Uri::builder()
+                    .scheme("http")
+                    .authority(Authority::from_str(&host)?)
+                    .path_and_query("")
+                    .build()?;
+
+                let channel = conn.get(uri)?;
+
+                let mut client = HimalayaInternalClient::new(channel);
                 let response = client.get(GetRequest { key }).await?.into_inner();
                 tx.send(response.value).await?;
                 Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
             });
         }
 
-        match timeout(Duration::from_millis(10000), rx.recv()).await {
-            Ok(Some(v)) => {
+        match rx.recv().await {
+            Some(v) => {
                 rx.close();
                 Ok(Some(v))
             }
-            Ok(None) => Err(Box::from("all replicas failed to get")),
-            Err(_) => Err(Box::from("timeout occurred")),
+            None => Err(Box::from("all replicas failed to get")),
         }
     }
 }
