@@ -65,7 +65,7 @@ impl<Provider: MetadataProvider> Topology<Provider> {
     }
 
     #[tracing::instrument(name = "Getting Replicas for token", skip(nodes))]
-    fn get_coordinator_and_replicas(
+    pub fn get_coordinator_and_replicas(
         num_replicas: usize,
         token: i64,
         nodes: &[Arc<Node>],
@@ -169,7 +169,6 @@ impl<Provider: MetadataProvider> Topology<Provider> {
 mod tests {
     use super::*;
     use crate::node::metadata::{EtcdMetadataProvider, NodeMetadata};
-    use test::Bencher;
 
     fn test_nodes() -> Vec<Arc<Node>> {
         let mut nodes = Vec::new();
@@ -182,13 +181,6 @@ mod tests {
         }
 
         nodes
-    }
-
-    #[bench]
-    fn bench_find_coordinator(b: &mut Bencher) {
-        let nodes = test_nodes();
-
-        b.iter(|| Topology::<EtcdMetadataProvider>::get_coordinator_and_replicas(1, 4, &nodes));
     }
 
     #[test]

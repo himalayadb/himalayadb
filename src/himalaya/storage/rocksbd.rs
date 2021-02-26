@@ -44,7 +44,7 @@ impl RocksClient {
     }
 
     #[inline]
-    fn wrap_value(value: &[u8], ts: i64) -> Vec<u8> {
+    pub fn wrap_value(value: &[u8], ts: i64) -> Vec<u8> {
         let mut wrapped_value = Vec::with_capacity(value.len() + mem::size_of::<i64>());
         wrapped_value.put_i64(ts);
         wrapped_value.put_slice(value);
@@ -81,7 +81,6 @@ mod tests {
     use claim::assert_ok;
     use fake::{Fake, Faker};
     use tempfile::tempdir;
-    use test::Bencher;
 
     #[test]
     fn test_can_merge_values() {
@@ -111,16 +110,5 @@ mod tests {
             .expect("expected to receive value");
 
         assert_eq!(val, &value);
-    }
-
-    #[bench]
-    fn bench_value_new(b: &mut Bencher) {
-        let ts = Faker.fake::<i64>();
-        let value = Faker.fake::<String>();
-        b.iter(|| {
-            let wrapped_value = RocksClient::wrap_value(value.as_bytes(), ts);
-
-            wrapped_value
-        });
     }
 }
